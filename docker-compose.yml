@@ -1,0 +1,35 @@
+services:
+  parachute:
+    build: .
+    container_name: parachute
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./parachute.yaml:/etc/parachute/config.yaml:ro
+    environment:
+      - PARACHUTE_PASSWORD=${PARACHUTE_PASSWORD:-changeme}
+    networks:
+      - agent-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Uncomment to add OpenClaw agent
+  # openclaw:
+  #   image: openclaw-agent:latest
+  #   container_name: openclaw
+  #   networks:
+  #     - agent-net
+  #   # IMPORTANT: No ports exposed - only accessible via parachute
+  #   environment:
+  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+  #   volumes:
+  #     - ./workspace:/workspace
+
+networks:
+  agent-net:
+    driver: bridge

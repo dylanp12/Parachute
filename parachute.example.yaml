@@ -1,0 +1,52 @@
+# Parachute configuration example
+# Copy this to parachute.yaml and customize
+
+auth:
+  username: "admin"
+  password_env: "PARACHUTE_PASSWORD"  # Read password from this env var
+  # token: "your-secret-token"        # Alternative: Bearer token
+  allowed_ips: []                      # Empty = allow all authenticated users
+
+risk_policy:
+  # Commands that are ALWAYS blocked (regex patterns)
+  block_commands:
+    - "rm -rf /"
+    - "rm -rf ~"
+    - ":(){ :|:& };:"
+    - "mkfs\\."
+    - "dd if=/dev/(zero|random) of=/dev/[sh]d"
+
+  # Commands that require manual approval (regex patterns)
+  require_approval:
+    - "\\brm\\b"
+    - "\\bssh\\b"
+    - "\\bcurl\\b.*(-X|--request).*POST"
+    - "\\bwget\\b"
+    - "\\bsudo\\b"
+    - "\\bgit\\b.*(push|force)"
+
+egress:
+  # Allowed domains for outbound requests (empty = block all)
+  allow_domains:
+    - "api.anthropic.com"
+    - "api.openai.com"
+    - "github.com"
+    - "*.githubusercontent.com"
+    - "pypi.org"
+    - "npmjs.com"
+
+  # PII patterns to detect and block
+  pii_patterns:
+    - "\\b4[0-9]{12}(?:[0-9]{3})?\\b"
+    - "\\b5[1-5][0-9]{14}\\b"
+    - "-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"
+    - "AKIA[0-9A-Z]{16}"
+    - "gh[pous]_[a-zA-Z0-9]{36}"
+
+relay:
+  enabled: false
+  # server_url: "wss://relay.parachute.io/ws"
+  # api_key: "your-api-key"
+
+upstream: "http://openclaw:3000"
+listen: ":8080"

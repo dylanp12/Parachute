@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parachute - Command Control</title>
+    <style>
+        :root {
+            --bg-primary: #0f0f12;
+            --bg-secondary: #1a1a20;
+            --bg-card: #22222a;
+            --accent: #6366f1;
+            --danger: #ef4444;
+            --success: #22c55e;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --border: #2d2d36;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        .container { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 3rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .logo { display: flex; align-items: center; gap: 0.75rem; }
+        .logo-icon {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.25rem;
+        }
+        .logo h1 { font-size: 1.5rem; font-weight: 600; }
+        .status-badge {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-secondary);
+            border-radius: 2rem;
+            font-size: 0.875rem;
+        }
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .section-title {
+            display: flex; align-items: center; gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem; font-weight: 500;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .pending-count {
+            background: var(--accent); color: white;
+            padding: 0.125rem 0.5rem; border-radius: 1rem; font-size: 0.75rem;
+        }
+        .empty-state {
+            text-align: center; padding: 4rem 2rem;
+            background: var(--bg-secondary);
+            border-radius: 12px; border: 1px dashed var(--border);
+        }
+        .empty-state-icon { font-size: 3rem; margin-bottom: 1rem; }
+        .empty-state h3 { margin-bottom: 0.5rem; }
+        .empty-state p { color: var(--text-secondary); font-size: 0.875rem; }
+        .command-card {
+            background: var(--bg-card);
+            border-radius: 12px; padding: 1.5rem;
+            margin-bottom: 1rem; border: 1px solid var(--border);
+            transition: all 0.2s ease;
+        }
+        .command-card:hover { border-color: var(--accent); }
+        .command-header {
+            display: flex; justify-content: space-between; margin-bottom: 1rem;
+        }
+        .command-id {
+            font-family: monospace; font-size: 0.75rem;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            padding: 0.25rem 0.5rem; border-radius: 4px;
+        }
+        .command-time { font-size: 0.75rem; color: var(--text-secondary); }
+        .command-content {
+            font-family: monospace;
+            background: var(--bg-primary);
+            padding: 1rem; border-radius: 8px;
+            margin-bottom: 1rem; font-size: 0.875rem;
+            border: 1px solid var(--border);
+        }
+        .command-reason {
+            display: flex; align-items: center; gap: 0.5rem;
+            font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem;
+        }
+        .command-reason::before { content: '⚠️'; }
+        .command-actions { display: flex; gap: 0.75rem; }
+        .btn {
+            flex: 1; padding: 0.75rem 1.5rem;
+            border: none; border-radius: 8px;
+            font-weight: 500; font-size: 0.875rem;
+            cursor: pointer; transition: all 0.2s ease;
+            display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+        }
+        .btn-approve { background: var(--success); color: white; }
+        .btn-deny { background: var(--danger); color: white; }
+        .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .toast {
+            position: fixed; bottom: 2rem; right: 2rem;
+            padding: 1rem 1.5rem;
+            background: var(--bg-card);
+            border-radius: 8px; border: 1px solid var(--border);
+            display: none;
+        }
+        footer {
+            margin-top: 3rem; text-align: center;
+            color: var(--text-secondary); font-size: 0.75rem;
+        }
+        footer a { color: var(--accent); text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">🪂</div>
+                <h1>Parachute</h1>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                <span>Connected</span>
+            </div>
+        </header>
+
+        <div class="section-title">
+            <span>Pending Commands</span>
+            <span class="pending-count" id="pendingCount">0</span>
+        </div>
+
+        <div id="commandList">
+            <div class="empty-state">
+                <div class="empty-state-icon">✓</div>
+                <h3>All Clear</h3>
+                <p>No commands pending approval</p>
+            </div>
+        </div>
+
+        <footer>
+            <p>Parachute Security Sidecar</p>
+        </footer>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        let pendingCommands = [];
+
+        async function fetchPending() {
+            try {
+                const response = await fetch('/api/pending');
+                const data = await response.json();
+                pendingCommands = data.pending || [];
+                render();
+            } catch (err) {
+                console.error('Failed to fetch pending:', err);
+            }
+        }
+
+        function render() {
+            const list = document.getElementById('commandList');
+            const count = document.getElementById('pendingCount');
+            count.textContent = pendingCommands.length;
+
+            if (pendingCommands.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">✓</div>
+                        <h3>All Clear</h3>
+                        <p>No commands pending approval</p>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = pendingCommands.map(cmd => `
+                <div class="command-card" id="card-${cmd.id}">
+                    <div class="command-header">
+                        <span class="command-id">#${cmd.id}</span>
+                        <span class="command-time">${new Date(cmd.created_at).toLocaleTimeString()}</span>
+                    </div>
+                    <div class="command-content">${escapeHtml(cmd.command)}</div>
+                    <div class="command-reason">${escapeHtml(cmd.reason)}</div>
+                    <div class="command-actions">
+                        <button class="btn btn-approve" onclick="approve('${cmd.id}')">✓ Approve</button>
+                        <button class="btn btn-deny" onclick="deny('${cmd.id}')">✕ Deny</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function approve(id) { await handleAction(id, 'approve'); }
+        async function deny(id) { await handleAction(id, 'deny'); }
+
+        async function handleAction(id, action) {
+            const card = document.getElementById(`card-${id}`);
+            const buttons = card.querySelectorAll('.btn');
+            buttons.forEach(btn => btn.disabled = true);
+
+            try {
+                const response = await fetch(`/api/${action}/${id}`, { method: 'POST' });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`Command ${action === 'approve' ? 'approved' : 'denied'}: #${id}`);
+                    pendingCommands = pendingCommands.filter(cmd => cmd.id !== id);
+                    render();
+                }
+            } catch (err) {
+                buttons.forEach(btn => btn.disabled = false);
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.display = 'block';
+            setTimeout(() => toast.style.display = 'none', 3000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        setInterval(fetchPending, 3000);
+        fetchPending();
+    </script>
+</body>
+</html>
