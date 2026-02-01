@@ -1,80 +1,244 @@
-# 🪂 Parachute
+# Parachute
 
 **The Seatbelt for your AI Agent.**
 
-A security sidecar that sits between the internet and your autonomous AI agent, providing authentication, command approval, and data leak prevention.
+A security sidecar that sits between the internet and your autonomous AI agent, providing authentication, command approval, egress control, and data leak prevention.
 
 ## Features
 
-- 🔐 **Ingress Control**: Basic Auth, Bearer Token, IP whitelisting
-- ⚡ **Command Interception**: Block or require approval for risky commands
-- 🔒 **Egress Control**: Domain whitelist, PII pattern detection
-- 📱 **Dashboard**: Real-time web UI for command approval
-- ☁️ **Cloud Relay**: Approve commands from your phone (Phase 3)
+- **Ingress Control**: Basic Auth, Bearer Token, IP whitelisting, rate limiting
+- **Command Interception**: Block or require approval for risky commands
+- **Shell Wrapper Detection**: Detects `bash -c`, `sh -c` and extracts inner commands
+- **Egress Control**: Domain whitelist with HTTPS CONNECT proxy support
+- **PII Detection**: Blocks requests containing credit cards, API keys, private keys
+- **Persistent Approval Queue**: SQLite-backed with TTL and idempotency
+- **Audit Logging**: Structured JSON logs with correlation IDs
+- **Dashboard**: Real-time web UI for command approval
 
 ## Quick Start
 
+### Option 1: Docker Compose (Recommended)
+
 ```bash
-# 1. Configure
+# 1. Clone and configure
+git clone https://github.com/parachute-security/parachute.git
+cd parachute
 cp parachute.example.yaml parachute.yaml
 
-# 2. Run with Docker
+# 2. Set your password
 export PARACHUTE_PASSWORD="your-secure-password"
+
+# 3. Start the stack
 docker compose up -d
 
-# 3. Access Dashboard
+# 4. Access Dashboard
 open http://localhost:8080/dashboard/
+# Login with admin / your-secure-password
 ```
+
+### Option 2: Build from Source
+
+```bash
+# Build
+make build
+
+# Run
+./build/parachute --config parachute.yaml
+```
+
+### Option 3: Hardened Deployment
+
+For production use, use the hardened profile which adds resource limits and security options:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
+```
+
+See [docs/iptables-hardening.md](docs/iptables-hardening.md) for host-level egress enforcement.
+
+## Architecture
+
+```
+                    ┌──────────────────────────────────────────────┐
+                    │           Docker Private Network             │
+                    │                                              │
+┌─────────────┐     │  ┌─────────────┐        ┌─────────────┐     │
+│   Internet  │────▶│  │  Parachute  │───────▶│  OpenClaw   │     │
+│             │     │  │  :8080/:8888│        │  (Agent)    │     │
+└─────────────┘     │  └──────┬──────┘        └─────────────┘     │
+                    │         │                                    │
+                    │  ┌──────┴──────┐                            │
+                    │  │  Dashboard  │                            │
+                    │  │  (Approve)  │                            │
+                    │  └─────────────┘                            │
+                    └──────────────────────────────────────────────┘
+```
+
+**Key Points:**
+- Only Parachute has exposed ports
+- Agent is on an internal network with no direct internet access
+- Agent's HTTP/HTTPS traffic goes through Parachute's forward proxy (:8888)
+- All commands are intercepted and checked against policy
 
 ## Configuration
 
 See `parachute.example.yaml` for all options.
 
-| Setting | Description |
-|---------|-------------|
-| `auth.username` | Basic auth username |
-| `auth.password_env` | Env var containing password |
-| `risk_policy.block_commands` | Regex patterns to always block |
-| `risk_policy.require_approval` | Regex patterns requiring HITL |
-| `egress.allow_domains` | Whitelisted outbound domains |
+### Authentication
 
-## Architecture
+```yaml
+auth:
+  username: "admin"
+  password_env: "PARACHUTE_PASSWORD"  # Read from environment
+  # token: "your-bearer-token"        # Alternative: Bearer token
+  allowed_ips: []                      # Empty = allow all authenticated
+```
 
+### Risk Policy
+
+```yaml
+risk_policy:
+  # Commands always blocked (regex patterns)
+  block_commands:
+    - "rm -rf /"
+    - ":(){ :|:& };:"          # Fork bomb
+    - "mkfs\\."                 # Filesystem format
+
+  # Commands requiring manual approval (regex patterns)
+  require_approval:
+    - "\\brm\\b"               # Any rm command
+    - "\\bsudo\\b"             # Any sudo usage
+    - "\\bcurl\\b.*POST"       # Curl POST requests
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Internet  │────▶│  Parachute  │────▶│  OpenClaw   │
-│             │     │  (Filter)   │     │  (Agent)    │
-└─────────────┘     └─────────────┘     └─────────────┘
-                           │
-                    ┌─────────────┐
-                    │  Dashboard  │
-                    │  (Approve)  │
-                    └─────────────┘
+
+### Egress Control
+
+```yaml
+egress:
+  allow_domains:
+    - "api.anthropic.com"
+    - "*.github.com"           # Wildcard subdomain support
+
+  pii_patterns:
+    - "\\b4[0-9]{12}(?:[0-9]{3})?\\b"  # Credit cards
+    - "-----BEGIN.*PRIVATE KEY-----"    # Private keys
+    - "AKIA[0-9A-Z]{16}"                # AWS keys
 ```
+
+### Storage
+
+```yaml
+storage:
+  type: "sqlite"  # "memory" or "sqlite"
+  path: "/var/lib/parachute/parachute.db"
+```
+
+## API Endpoints
+
+| Endpoint | Auth | Description |
+|----------|------|-------------|
+| `GET /health` | No | Health check |
+| `GET /healthz` | No | Kubernetes health check |
+| `GET /dashboard/*` | Yes | Approval web UI |
+| `GET /api/pending` | Yes | List pending commands |
+| `GET /api/pending/:id` | Yes | Get specific pending command |
+| `POST /api/approve/:id` | Yes | Approve a command |
+| `POST /api/deny/:id` | Yes | Deny a command |
+| `* /proxy/*` | Yes | Reverse proxy to agent |
+
+### Forward Proxy (Agent Egress)
+
+Port 8888 runs a forward HTTP/HTTPS proxy for agent egress control:
+- Supports HTTP CONNECT for HTTPS tunneling
+- Enforces domain whitelist
+- Blocks PII in outbound requests
 
 ## Development
 
 ```bash
 # Build
-go build -o parachute ./cmd/parachute
+make build
 
-# Run
-./parachute --config parachute.example.yaml
+# Run tests
+make test
 
-# Test
-go test ./... -v
+# Run unit tests only
+make test-unit
+
+# Run integration tests (requires Docker)
+make test-integration
+
+# Format code
+make fmt
+
+# Run linters
+make lint
+
+# Clean build artifacts
+make clean
 ```
 
-## API
+## Security Notes
 
-| Endpoint | Description |
+### What Parachute Protects Against
+
+1. **Unauthorized Access**: Basic Auth + Bearer Token + IP whitelist
+2. **Destructive Commands**: Block `rm -rf /`, fork bombs, etc.
+3. **Risky Operations**: Require manual approval for `sudo`, `ssh`, etc.
+4. **Data Exfiltration**: PII detection blocks credit cards, API keys
+5. **Unauthorized Egress**: Domain whitelist + HTTPS CONNECT proxy
+
+### What Parachute Does NOT Protect Against
+
+1. **Container Escape**: If the agent escapes its container, it can bypass Parachute
+2. **Binary Execution**: Compiled binaries can make direct syscalls
+3. **Kernel Exploits**: Kernel-level attacks bypass userspace proxying
+4. **Timing Attacks**: While auth uses constant-time comparison, other side channels may exist
+
+### Hardening Recommendations
+
+1. **Enable Authentication**: Never run without `auth.username` or `auth.token`
+2. **Use Persistent Storage**: Set `storage.type: sqlite` for production
+3. **Restrict IP Access**: Configure `auth.allowed_ips` if possible
+4. **Use Hardened Profile**: Deploy with `docker-compose.hardened.yml`
+5. **Add iptables Rules**: See [docs/iptables-hardening.md](docs/iptables-hardening.md)
+6. **Monitor Audit Logs**: Check JSON logs for security events
+
+### Environment Variables
+
+| Variable | Description |
 |----------|-------------|
-| `GET /health` | Health check |
-| `GET /dashboard/` | Approval UI |
-| `GET /api/pending` | List pending |
-| `POST /api/approve/:id` | Approve |
-| `POST /api/deny/:id` | Deny |
-| `* /proxy/*` | Proxy to agent |
+| `PARACHUTE_PASSWORD` | Password for basic auth (referenced by `password_env`) |
+| `ANTHROPIC_API_KEY` | API key for agent (passed through) |
+
+## Project Structure
+
+```
+parachute/
+├── cmd/parachute/         # Main entry point
+├── internal/
+│   ├── approval/          # Approval queue with persistence
+│   ├── audit/             # Structured JSON logging
+│   ├── config/            # Configuration loading
+│   ├── dashboard/         # Web UI
+│   ├── egress/            # Domain whitelist, PII detection
+│   ├── interceptor/       # Command parsing, shell wrapper detection
+│   ├── middleware/        # Auth, rate limiting, correlation ID
+│   ├── proxy/             # Reverse proxy + forward proxy
+│   ├── relay/             # Cloud relay (Phase 3)
+│   └── storage/           # SQLite persistence
+├── tests/integration/     # Integration tests
+├── docs/                  # Documentation
+├── docker-compose.yml     # Standard deployment
+├── docker-compose.hardened.yml  # Hardened deployment
+└── Makefile               # Build targets
+```
+
+## Roadmap
+
+- [x] Phase 1: Basic proxy with auth and command interception
+- [x] Phase 2: Enhanced HITL with persistent queue and audit logging
+- [ ] Phase 3: Cloud Relay for mobile approval ("Parachute Pro")
 
 ## License
 

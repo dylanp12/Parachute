@@ -11,12 +11,20 @@ import (
 
 // Config is the root configuration structure
 type Config struct {
-	Auth       AuthConfig       `yaml:"auth"`
-	RiskPolicy RiskPolicyConfig `yaml:"risk_policy"`
-	Egress     EgressConfig     `yaml:"egress"`
-	Relay      RelayConfig      `yaml:"relay"`
-	Upstream   string           `yaml:"upstream"`
-	Listen     string           `yaml:"listen"`
+	Auth        AuthConfig       `yaml:"auth"`
+	RiskPolicy  RiskPolicyConfig `yaml:"risk_policy"`
+	Egress      EgressConfig     `yaml:"egress"`
+	Relay       RelayConfig      `yaml:"relay"`
+	Storage     StorageConfig    `yaml:"storage"`
+	Upstream    string           `yaml:"upstream"`
+	Listen      string           `yaml:"listen"`
+	ProxyListen string           `yaml:"proxy_listen"` // Forward proxy listen address for agent egress
+}
+
+// StorageConfig defines persistent storage settings
+type StorageConfig struct {
+	Type string `yaml:"type"` // "memory" or "sqlite"
+	Path string `yaml:"path"` // Path to SQLite database file
 }
 
 // AuthConfig holds authentication settings
@@ -158,6 +166,15 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Upstream == "" {
 		cfg.Upstream = "http://openclaw:3000"
+	}
+	if cfg.ProxyListen == "" {
+		cfg.ProxyListen = ":8888"
+	}
+	if cfg.Storage.Type == "" {
+		cfg.Storage.Type = "memory" // Default to in-memory for backward compatibility
+	}
+	if cfg.Storage.Path == "" {
+		cfg.Storage.Path = "/var/lib/parachute/parachute.db"
 	}
 
 	// Compile regex patterns

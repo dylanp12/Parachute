@@ -3,13 +3,15 @@ services:
     build: .
     container_name: parachute
     ports:
-      - "8080:8080"
+      - "8080:8080"   # Main API/Dashboard
+      - "8888:8888"   # Forward proxy for agent egress
     volumes:
       - ./parachute.yaml:/etc/parachute/config.yaml:ro
     environment:
       - PARACHUTE_PASSWORD=${PARACHUTE_PASSWORD:-changeme}
     networks:
-      - agent-net
+      - public-net    # Internet access for Parachute
+      - agent-net     # Private network with agent
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
@@ -18,18 +20,36 @@ services:
       retries: 3
       start_period: 5s
 
-  # Uncomment to add OpenClaw agent
-  # openclaw:
-  #   image: openclaw-agent:latest
-  #   container_name: openclaw
-  #   networks:
-  #     - agent-net
-  #   # IMPORTANT: No ports exposed - only accessible via parachute
-  #   environment:
-  #     - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-  #   volumes:
-  #     - ./workspace:/workspace
+  # OpenClaw agent - ISOLATED, no direct internet access
+  openclaw:
+    image: ${OPENCLAW_IMAGE:-openclaw-agent:latest}
+    container_name: openclaw
+    networks:
+      - agent-net     # Private network ONLY - no internet access
+    # IMPORTANT: No ports exposed - only accessible via parachute
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Force all HTTP/HTTPS traffic through Parachute proxy
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      # Don't proxy local traffic
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ./workspace:/workspace
+    depends_on:
+      parachute:
+        condition: service_healthy
+    restart: unless-stopped
 
 networks:
+  # Public network - has internet access
+  public-net:
+    driver: bridge
+
+  # Private network - NO internet access, isolated
   agent-net:
     driver: bridge
+    internal: true  # CRITICAL: This prevents direct internet access

@@ -1,0 +1,32 @@
+# Test configuration for integration tests
+auth:
+  username: "admin"
+  password_env: "PARACHUTE_PASSWORD"
+  allowed_ips: []
+
+risk_policy:
+  block_commands:
+    - "rm -rf /"
+    - ":(){ :|:& };:"
+    - "mkfs\\."
+  require_approval:
+    - "\\brm\\b"
+    - "\\bsudo\\b"
+    - "\\bcurl\\b.*POST"
+
+egress:
+  allow_domains:
+    - "api.anthropic.com"
+    - "httpbin.org"  # For testing
+    - "example.com"  # For testing
+  pii_patterns:
+    - "\\b4[0-9]{12}(?:[0-9]{3})?\\b"
+    - "-----BEGIN.*PRIVATE KEY-----"
+    - "AKIA[0-9A-Z]{16}"
+
+storage:
+  type: "memory"
+
+upstream: "http://dummy-agent:3000"
+listen: ":8080"
+proxy_listen: ":8888"

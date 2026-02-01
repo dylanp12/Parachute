@@ -1,0 +1,65 @@
+services:
+  parachute:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: parachute-test
+    ports:
+      - "18080:8080"
+      - "18888:8888"
+    volumes:
+      - ./parachute.test.yaml:/etc/parachute/config.yaml:ro
+    environment:
+      - PARACHUTE_PASSWORD=testpass123
+    networks:
+      - public-net
+      - agent-net
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Dummy agent for testing
+  dummy-agent:
+    image: python:3.11-alpine
+    container_name: dummy-agent
+    networks:
+      - agent-net
+    environment:
+      - HTTP_PROXY=http://parachute-test:8888
+      - HTTPS_PROXY=http://parachute-test:8888
+      - http_proxy=http://parachute-test:8888
+      - https_proxy=http://parachute-test:8888
+      - NO_PROXY=localhost,127.0.0.1,parachute-test
+    command: |
+      sh -c "
+        pip install flask --quiet &&
+        python -c '
+from flask import Flask, request, jsonify
+app = Flask(__name__)
+
+@app.route(\"/health\", methods=[\"GET\"])
+def health():
+    return jsonify({\"status\": \"ok\"})
+
+@app.route(\"/execute\", methods=[\"POST\"])
+def execute():
+    data = request.json
+    return jsonify({\"received\": data})
+
+if __name__ == \"__main__\":
+    app.run(host=\"0.0.0.0\", port=3000)
+        '
+      "
+    depends_on:
+      parachute:
+        condition: service_healthy
+
+networks:
+  public-net:
+    driver: bridge
+  agent-net:
+    driver: bridge
+    internal: true

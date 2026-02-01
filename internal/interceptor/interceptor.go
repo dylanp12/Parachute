@@ -1,6 +1,9 @@
 package interceptor
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/parachute-security/parachute/internal/config"
 )
 
@@ -13,9 +16,10 @@ type ToolCall struct {
 
 // Result represents the decision for a tool call
 type Result struct {
-	Action Action
-	Reason string
-	ID     string
+	Action  Action
+	Reason  string
+	ID      string
+	Command string // The actual command that triggered the action
 }
 
 // Action defines what to do with a tool call
@@ -38,20 +42,49 @@ func New(policy *config.RiskPolicyConfig) *Interceptor {
 }
 
 // Check evaluates a tool call and returns the decision
+// It extracts all commands (including from shell wrappers) and checks each one
 func (i *Interceptor) Check(tc *ToolCall) *Result {
-	cmd := i.extractCommand(tc)
-	if cmd == "" {
+	rawCmd := i.extractCommand(tc)
+	if rawCmd == "" {
 		return &Result{Action: ActionAllow}
 	}
 
-	tc.Command = cmd
+	tc.Command = rawCmd
 
-	if i.policy.ShouldBlock(cmd) {
-		return &Result{Action: ActionBlock, Reason: "command matches block policy"}
+	// Check for base64 encoded command evasion
+	if IsBase64Encoded(rawCmd) {
+		return &Result{
+			Action:  ActionPending,
+			Reason:  "potential base64 encoded command evasion",
+			Command: rawCmd,
+		}
 	}
 
-	if i.policy.RequiresApproval(cmd) {
-		return &Result{Action: ActionPending, Reason: "command requires approval"}
+	// Extract all commands including from shell wrappers and compound commands
+	commands := ExtractAllCommands(rawCmd)
+
+	// Check each extracted command against policy
+	// Block takes precedence over approval, which takes precedence over allow
+	var pendingCmd string
+	for _, cmd := range commands {
+		if i.policy.ShouldBlock(cmd) {
+			return &Result{
+				Action:  ActionBlock,
+				Reason:  "command matches block policy",
+				Command: cmd,
+			}
+		}
+		if i.policy.RequiresApproval(cmd) && pendingCmd == "" {
+			pendingCmd = cmd
+		}
+	}
+
+	if pendingCmd != "" {
+		return &Result{
+			Action:  ActionPending,
+			Reason:  "command requires approval",
+			Command: pendingCmd,
+		}
 	}
 
 	return &Result{Action: ActionAllow}
@@ -64,7 +97,8 @@ func (i *Interceptor) extractCommand(tc *ToolCall) string {
 		"shell": true, "terminal": true, "execute": true, "run": true, "command": true,
 	}
 
-	if !execToolNames[tc.Name] {
+	// Check both exact match and lowercase
+	if !execToolNames[tc.Name] && !execToolNames[strings.ToLower(tc.Name)] {
 		return ""
 	}
 
@@ -78,6 +112,229 @@ func (i *Interceptor) extractCommand(tc *ToolCall) string {
 	}
 
 	return ""
+}
+
+// ExtractAllCommands extracts all individual commands from a complex command string
+// This handles shell wrappers, command separators, and nested commands
+func ExtractAllCommands(cmd string) []string {
+	var result []string
+
+	// First, unwrap any shell wrappers
+	unwrapped := unwrapShellCommand(cmd)
+
+	// Split on command separators
+	parts := splitCommandSeparators(unwrapped)
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		// Check for command substitution
+		subcommands := extractCommandSubstitution(part)
+		result = append(result, subcommands...)
+
+		// Add the main command too
+		result = append(result, part)
+	}
+
+	// Also add the original command for pattern matching
+	if cmd != unwrapped {
+		result = append(result, cmd)
+	}
+
+	return dedupe(result)
+}
+
+// unwrapShellCommand recursively extracts commands from shell wrappers like:
+// - bash -c "command"
+// - sh -c 'command'
+// - bash -lc "command"
+// - zsh -c "command"
+// - /bin/bash -c "command"
+func unwrapShellCommand(cmd string) string {
+	cmd = strings.TrimSpace(cmd)
+
+	// Regex to match shell wrapper patterns
+	shellWrapperPatterns := []*regexp.Regexp{
+		// bash -c 'cmd' or bash -c "cmd" with various flags
+		regexp.MustCompile(`^(?:/bin/|/usr/bin/)?(?:ba)?sh\s+-[a-z]*c\s+["'](.+?)["']\s*$`),
+		// bash -c cmd (no quotes)
+		regexp.MustCompile(`^(?:/bin/|/usr/bin/)?(?:ba)?sh\s+-[a-z]*c\s+(.+)$`),
+		// zsh -c 'cmd'
+		regexp.MustCompile(`^(?:/bin/|/usr/bin/)?zsh\s+-[a-z]*c\s+["'](.+?)["']\s*$`),
+		// zsh -c cmd
+		regexp.MustCompile(`^(?:/bin/|/usr/bin/)?zsh\s+-[a-z]*c\s+(.+)$`),
+		// env bash -c cmd
+		regexp.MustCompile(`^env\s+(?:/bin/|/usr/bin/)?(?:ba)?sh\s+-[a-z]*c\s+["'](.+?)["']\s*$`),
+	}
+
+	for _, pattern := range shellWrapperPatterns {
+		if matches := pattern.FindStringSubmatch(cmd); len(matches) > 1 {
+			// Recursively unwrap in case of nested wrappers
+			return unwrapShellCommand(matches[1])
+		}
+	}
+
+	return cmd
+}
+
+// splitCommandSeparators splits a command on separators like ; && || and newlines
+func splitCommandSeparators(cmd string) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := rune(0)
+	escapeNext := false
+	depth := 0 // Track parentheses/braces depth
+
+	for _, r := range cmd {
+		if escapeNext {
+			current.WriteRune(r)
+			escapeNext = false
+			continue
+		}
+
+		if r == '\\' {
+			escapeNext = true
+			current.WriteRune(r)
+			continue
+		}
+
+		// Track quotes
+		if r == '"' || r == '\'' || r == '`' {
+			if inQuote == 0 {
+				inQuote = r
+			} else if inQuote == r {
+				inQuote = 0
+			}
+			current.WriteRune(r)
+			continue
+		}
+
+		// Track nesting
+		if r == '(' || r == '{' || r == '[' {
+			depth++
+			current.WriteRune(r)
+			continue
+		}
+		if r == ')' || r == '}' || r == ']' {
+			depth--
+			current.WriteRune(r)
+			continue
+		}
+
+		// Only split on separators when not in quotes or nested
+		if inQuote == 0 && depth == 0 {
+			if r == ';' || r == '\n' {
+				if s := strings.TrimSpace(current.String()); s != "" {
+					result = append(result, s)
+				}
+				current.Reset()
+				continue
+			}
+		}
+
+		current.WriteRune(r)
+	}
+
+	if s := strings.TrimSpace(current.String()); s != "" {
+		result = append(result, s)
+	}
+
+	// Also split on && and ||
+	var finalResult []string
+	for _, part := range result {
+		subParts := splitOnOperators(part)
+		finalResult = append(finalResult, subParts...)
+	}
+
+	return finalResult
+}
+
+// splitOnOperators splits on && and || while respecting quotes
+func splitOnOperators(cmd string) []string {
+	var result []string
+	var current strings.Builder
+	inQuote := rune(0)
+	chars := []rune(cmd)
+
+	for i := 0; i < len(chars); i++ {
+		r := chars[i]
+
+		// Track quotes
+		if r == '"' || r == '\'' || r == '`' {
+			if inQuote == 0 {
+				inQuote = r
+			} else if inQuote == r {
+				inQuote = 0
+			}
+			current.WriteRune(r)
+			continue
+		}
+
+		// Check for && or || when not in quotes
+		if inQuote == 0 && i < len(chars)-1 {
+			next := chars[i+1]
+			if (r == '&' && next == '&') || (r == '|' && next == '|') {
+				if s := strings.TrimSpace(current.String()); s != "" {
+					result = append(result, s)
+				}
+				current.Reset()
+				i++ // Skip next character
+				continue
+			}
+		}
+
+		current.WriteRune(r)
+	}
+
+	if s := strings.TrimSpace(current.String()); s != "" {
+		result = append(result, s)
+	}
+
+	return result
+}
+
+// extractCommandSubstitution finds and extracts commands from $() and `` substitutions
+func extractCommandSubstitution(cmd string) []string {
+	var result []string
+
+	// Find $(...) patterns
+	dollarParenRegex := regexp.MustCompile(`\$\(([^)]+)\)`)
+	matches := dollarParenRegex.FindAllStringSubmatch(cmd, -1)
+	for _, match := range matches {
+		if len(match) > 1 {
+			// Recursively extract from nested commands
+			result = append(result, match[1])
+			result = append(result, ExtractAllCommands(match[1])...)
+		}
+	}
+
+	// Find `...` patterns (backticks)
+	backtickRegex := regexp.MustCompile("`([^`]+)`")
+	matches = backtickRegex.FindAllStringSubmatch(cmd, -1)
+	for _, match := range matches {
+		if len(match) > 1 {
+			result = append(result, match[1])
+			result = append(result, ExtractAllCommands(match[1])...)
+		}
+	}
+
+	return result
+}
+
+// dedupe removes duplicate strings from a slice
+func dedupe(items []string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	for _, item := range items {
+		if !seen[item] {
+			seen[item] = true
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 // ParseToolCallFromJSON extracts tool call info from various JSON formats
@@ -111,4 +368,12 @@ func ParseToolCallFromJSON(data map[string]any) *ToolCall {
 	}
 
 	return nil
+}
+
+// IsBase64Encoded checks if a command appears to be base64 encoded
+// This is useful for detecting evasion attempts like: echo "cm0gLXJmIC8=" | base64 -d | sh
+func IsBase64Encoded(cmd string) bool {
+	// Look for patterns like: base64 -d | sh, base64 --decode | bash
+	base64PipePattern := regexp.MustCompile(`base64\s+(-d|--decode).*\|\s*(sh|bash|zsh)`)
+	return base64PipePattern.MatchString(cmd)
 }

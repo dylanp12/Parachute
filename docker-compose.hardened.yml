@@ -1,0 +1,56 @@
+# HARDENED CONFIGURATION
+# Use with: docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
+#
+# This profile adds additional security measures beyond network isolation.
+# For full egress control on the host, see docs/iptables-hardening.md
+
+services:
+  parachute:
+    # Run as non-root user
+    user: "1000:1000"
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    # Read-only root filesystem
+    read_only: true
+    tmpfs:
+      - /tmp:size=10M,mode=1777
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 64M
+
+  openclaw:
+    # Run as non-root user
+    user: "1000:1000"
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Read-only root filesystem where possible
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M,mode=1777
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    # Prevent container escape via /proc
+    pid: "host"
+    # No privileged access
+    privileged: false
