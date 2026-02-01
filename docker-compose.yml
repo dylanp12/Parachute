@@ -1,7 +1,22 @@
+# Parachute Security Sidecar - Docker Compose Configuration
+#
+# NETWORK ARCHITECTURE:
+#   Internet ─────► Parachute (8080/8888) ◄────► Agent (isolated)
+#                        │                           │
+#                   public-net                  agent-net
+#                   (has internet)            (NO internet)
+#
+# SECURITY GUARANTEES:
+# 1. Agent container has NO direct internet access (internal network only)
+# 2. All agent egress traffic MUST go through Parachute forward proxy
+# 3. Only Parachute has exposed ports; agent ports are NOT accessible
+# 4. Egress is filtered by domain whitelist and PII patterns
+
 services:
   parachute:
     build: .
     container_name: parachute
+    # ONLY Parachute exposes ports to the outside world
     ports:
       - "8080:8080"   # Main API/Dashboard
       - "8888:8888"   # Forward proxy for agent egress
@@ -10,7 +25,7 @@ services:
     environment:
       - PARACHUTE_PASSWORD=${PARACHUTE_PASSWORD:-changeme}
     networks:
-      - public-net    # Internet access for Parachute
+      - public-net    # Internet access for Parachute ONLY
       - agent-net     # Private network with agent
     restart: unless-stopped
     healthcheck:
@@ -20,21 +35,23 @@ services:
       retries: 3
       start_period: 5s
 
-  # OpenClaw agent - ISOLATED, no direct internet access
+  # OpenClaw agent - COMPLETELY ISOLATED, no direct internet access
   openclaw:
     image: ${OPENCLAW_IMAGE:-openclaw-agent:latest}
     container_name: openclaw
     networks:
-      - agent-net     # Private network ONLY - no internet access
-    # IMPORTANT: No ports exposed - only accessible via parachute
+      - agent-net     # Private network ONLY - NO internet access
+    # CRITICAL: No ports exposed - agent is only accessible via parachute
+    # This is a security requirement, not an oversight
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      # Force all HTTP/HTTPS traffic through Parachute proxy
+      # MANDATORY: Force ALL HTTP/HTTPS traffic through Parachute proxy
+      # Without these, the agent cannot reach the internet at all
       - HTTP_PROXY=http://parachute:8888
       - HTTPS_PROXY=http://parachute:8888
       - http_proxy=http://parachute:8888
       - https_proxy=http://parachute:8888
-      # Don't proxy local traffic
+      # Don't proxy local/internal traffic
       - NO_PROXY=localhost,127.0.0.1,parachute
       - no_proxy=localhost,127.0.0.1,parachute
     volumes:
@@ -46,10 +63,12 @@ services:
 
 networks:
   # Public network - has internet access
+  # ONLY Parachute should be connected to this network
   public-net:
     driver: bridge
 
-  # Private network - NO internet access, isolated
+  # Private/internal network - NO internet access
+  # This is the security boundary that isolates the agent
   agent-net:
     driver: bridge
-    internal: true  # CRITICAL: This prevents direct internet access
+    internal: true  # CRITICAL: Prevents direct internet access for all containers on this network

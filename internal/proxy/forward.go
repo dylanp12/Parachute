@@ -16,7 +16,14 @@ import (
 )
 
 // ForwardProxy handles outbound requests from the agent container
-// acting as an HTTP/HTTPS forward proxy with domain filtering
+// acting as an HTTP/HTTPS forward proxy with domain filtering.
+//
+// SECURITY NOTE: PII Detection Limitations
+// - HTTP requests: Full content inspection (PII patterns checked)
+// - HTTPS CONNECT: Only domain filtering, NO content inspection
+//   HTTPS tunnels are end-to-end encrypted; we cannot inspect the payload
+//   without TLS interception (MITM), which is not implemented.
+//   See docs/pii-detection.md for details.
 type ForwardProxy struct {
 	egress  *egress.Filter
 	cfg     *config.Config
@@ -115,8 +122,16 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 	}
 }
 
-// ConnectHandler handles HTTPS CONNECT tunneling requests
-// This must be called from a raw TCP handler, not Fiber
+// HandleConnect handles HTTPS CONNECT tunneling requests.
+// This must be called from a raw TCP handler, not Fiber.
+//
+// IMPORTANT: This creates an opaque tunnel - we can only filter by domain,
+// not by content. The TLS handshake and all subsequent traffic between client
+// and target is encrypted end-to-end. PII detection is NOT possible here
+// without implementing TLS interception (MITM proxy), which would require:
+// 1. Generating certificates on-the-fly for each domain
+// 2. Installing a CA certificate in the agent container
+// 3. Handling certificate pinning failures
 func (fp *ForwardProxy) HandleConnect(clientConn net.Conn, host string) {
 	defer clientConn.Close()
 

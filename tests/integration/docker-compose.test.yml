@@ -21,12 +21,12 @@ services:
       retries: 5
       start_period: 5s
 
-  # Dummy agent - simple HTTP server
+  # Dummy agent - simple HTTP server for proxy pass-through tests
   dummy-agent:
     image: python:3.11-alpine
     container_name: dummy-agent
     networks:
-      - agent-net
+      - agent-net  # ONLY on internal network - NO internet access
     working_dir: /app
     volumes:
       - ./dummy_agent.py:/app/dummy_agent.py:ro
@@ -35,9 +35,37 @@ services:
       parachute:
         condition: service_started
 
+  # Test agent for network isolation verification
+  # This container tests that the agent truly cannot reach internet directly
+  test-agent:
+    image: alpine:3.19
+    container_name: test-agent
+    networks:
+      - agent-net  # ONLY on internal network - critical for isolation test
+    # NOTE: NO ports exposed - agent is isolated
+    environment:
+      # Force all traffic through Parachute proxy
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      # Don't proxy localhost and parachute
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ./test_network_isolation.sh:/test_network_isolation.sh:ro
+    command: ["sh", "-c", "apk add --no-cache curl bind-tools && sleep 5 && chmod +x /test_network_isolation.sh && /test_network_isolation.sh"]
+    depends_on:
+      parachute:
+        condition: service_healthy
+
 networks:
+  # Public network - has internet access (only parachute connects here)
   public-net:
     driver: bridge
+
+  # Private network - NO internet access, completely isolated
+  # This is the CRITICAL security boundary
   agent-net:
     driver: bridge
-    internal: true
+    internal: true  # CRITICAL: This prevents direct internet access for containers on this network

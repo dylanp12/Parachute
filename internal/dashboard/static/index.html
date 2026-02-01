@@ -54,6 +54,7 @@
             background: var(--success);
             animation: pulse 2s infinite;
         }
+        .status-dot.disconnected { background: var(--danger); animation: none; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .section-title {
             display: flex; align-items: center; gap: 0.5rem;
@@ -97,6 +98,7 @@
             padding: 1rem; border-radius: 8px;
             margin-bottom: 1rem; font-size: 0.875rem;
             border: 1px solid var(--border);
+            word-break: break-all;
         }
         .command-reason {
             display: flex; align-items: center; gap: 0.5rem;
@@ -121,7 +123,9 @@
             background: var(--bg-card);
             border-radius: 8px; border: 1px solid var(--border);
             display: none;
+            z-index: 1000;
         }
+        .toast.error { border-color: var(--danger); }
         footer {
             margin-top: 3rem; text-align: center;
             color: var(--text-secondary); font-size: 0.75rem;
@@ -137,8 +141,8 @@
                 <h1>Parachute</h1>
             </div>
             <div class="status-badge">
-                <div class="status-dot"></div>
-                <span>Connected</span>
+                <div class="status-dot" id="statusDot"></div>
+                <span id="statusText">Connected</span>
             </div>
         </header>
 
@@ -164,15 +168,53 @@
 
     <script>
         let pendingCommands = [];
+        let csrfToken = null;
+        let connected = true;
+
+        // Get CSRF token from cookie
+        function getCSRFToken() {
+            const cookies = document.cookie.split(';');
+            for (const cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === '_csrf') {
+                    return value;
+                }
+            }
+            return csrfToken; // Fallback to token from API response
+        }
 
         async function fetchPending() {
             try {
-                const response = await fetch('/api/pending');
+                const response = await fetch('/api/pending', {
+                    credentials: 'same-origin'
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
                 const data = await response.json();
                 pendingCommands = data.pending || [];
+                // Store CSRF token if provided in response
+                if (data.csrf_token) {
+                    csrfToken = data.csrf_token;
+                }
+                setConnected(true);
                 render();
             } catch (err) {
                 console.error('Failed to fetch pending:', err);
+                setConnected(false);
+            }
+        }
+
+        function setConnected(isConnected) {
+            connected = isConnected;
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            if (isConnected) {
+                dot.classList.remove('disconnected');
+                text.textContent = 'Connected';
+            } else {
+                dot.classList.add('disconnected');
+                text.textContent = 'Disconnected';
             }
         }
 
@@ -217,7 +259,26 @@
             buttons.forEach(btn => btn.disabled = true);
 
             try {
-                const response = await fetch(`/api/${action}/${id}`, { method: 'POST' });
+                const token = getCSRFToken();
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                // Include CSRF token in header if available
+                if (token) {
+                    headers['X-CSRF-Token'] = token;
+                }
+
+                const response = await fetch(`/api/${action}/${id}`, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: headers
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+
                 const data = await response.json();
                 if (data.success) {
                     showToast(`Command ${action === 'approve' ? 'approved' : 'denied'}: #${id}`);
@@ -225,13 +286,16 @@
                     render();
                 }
             } catch (err) {
+                console.error(`Failed to ${action}:`, err);
+                showToast(`Error: ${err.message}`, true);
                 buttons.forEach(btn => btn.disabled = false);
             }
         }
 
-        function showToast(message) {
+        function showToast(message, isError = false) {
             const toast = document.getElementById('toast');
             toast.textContent = message;
+            toast.className = 'toast' + (isError ? ' error' : '');
             toast.style.display = 'block';
             setTimeout(() => toast.style.display = 'none', 3000);
         }

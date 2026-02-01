@@ -44,10 +44,15 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Warn if no authentication is configured
-	if cfg.Auth.Username == "" && cfg.Auth.Token == "" {
-		log.Printf("[WARN] No authentication configured! All protected endpoints are PUBLIC.")
-		log.Printf("[WARN] Set auth.username or auth.token in config to enable security.")
+	// Check authentication configuration
+	authConfigured := cfg.Auth.Username != "" || cfg.Auth.Token != ""
+	if !authConfigured {
+		if cfg.Auth.AllowInsecure {
+			log.Printf("[WARN] Running in INSECURE mode without authentication!")
+			log.Printf("[WARN] This should only be used for development.")
+		} else {
+			log.Fatalf("[FATAL] No authentication configured and allow_insecure is not set.")
+		}
 	}
 
 	log.Printf("Starting Parachute %s", version)
@@ -94,7 +99,9 @@ func main() {
 
 	// Global middleware
 	app.Use(recover.New())
-	app.Use(middleware.CorrelationID()) // Add correlation ID to all requests
+	app.Use(middleware.StripForwardedHeaders()) // Strip/overwrite X-Forwarded-* headers for security
+	app.Use(middleware.SecureHeaders())          // Add security headers (X-Frame-Options, etc.)
+	app.Use(middleware.CorrelationID())          // Add correlation ID to all requests
 	app.Use(logger.New(logger.Config{
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))

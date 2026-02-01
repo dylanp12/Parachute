@@ -48,6 +48,12 @@ test-integration: ## Run integration tests with Docker
 	@sleep 10
 	@echo "Running integration tests..."
 	cd tests/integration && ./run_tests.sh || (docker compose -f docker-compose.test.yml logs && exit 1)
+	@echo ""
+	@echo "Running network isolation tests (from inside agent container)..."
+	cd tests/integration && docker compose -f docker-compose.test.yml logs test-agent
+	@echo ""
+	@echo "Verifying network isolation test results..."
+	cd tests/integration && docker compose -f docker-compose.test.yml logs test-agent 2>&1 | grep -q "All network isolation tests passed" || (echo "Network isolation tests failed!" && docker compose -f docker-compose.test.yml logs && exit 1)
 	@echo "Cleaning up..."
 	cd tests/integration && docker compose -f docker-compose.test.yml down -v
 

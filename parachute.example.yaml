@@ -1,32 +1,38 @@
 # Parachute configuration example
 # Copy this to parachute.yaml and customize
+#
+# For detailed documentation, see:
+# - docs/openclaw-integration.md - OpenClaw gateway setup
+# - docs/pii-detection.md - PII scanning limitations and recommendations
 
 auth:
   username: "admin"
   password_env: "PARACHUTE_PASSWORD"  # Read password from this env var
   # token: "your-secret-token"        # Alternative: Bearer token
   allowed_ips: []                      # Empty = allow all authenticated users
+  # allow_insecure: false             # Set to true to allow running without auth (DANGEROUS)
 
 risk_policy:
   # Commands that are ALWAYS blocked (regex patterns)
   block_commands:
     - "rm -rf /"
     - "rm -rf ~"
-    - ":(){ :|:& };:"
-    - "mkfs\\."
-    - "dd if=/dev/(zero|random) of=/dev/[sh]d"
+    - ":(){ :|:& };:"                  # Fork bomb
+    - "mkfs\\."                        # Filesystem formatting
+    - "dd if=/dev/(zero|random) of=/dev/[sh]d"  # Disk overwrite
 
   # Commands that require manual approval (regex patterns)
   require_approval:
-    - "\\brm\\b"
-    - "\\bssh\\b"
-    - "\\bcurl\\b.*(-X|--request).*POST"
-    - "\\bwget\\b"
-    - "\\bsudo\\b"
-    - "\\bgit\\b.*(push|force)"
+    - "\\brm\\b"                       # Any rm command
+    - "\\bssh\\b"                      # SSH connections
+    - "\\bcurl\\b.*(-X|--request).*POST"  # curl POST requests
+    - "\\bwget\\b"                     # wget downloads
+    - "\\bsudo\\b"                     # Privileged commands
+    - "\\bgit\\b.*(push|force)"        # Git push/force operations
 
 egress:
   # Allowed domains for outbound requests (empty = block all)
+  # NOTE: Only domain filtering works for HTTPS; PII scanning requires plaintext HTTP
   allow_domains:
     - "api.anthropic.com"
     - "api.openai.com"
@@ -36,12 +42,17 @@ egress:
     - "npmjs.com"
 
   # PII patterns to detect and block
+  # WARNING: These patterns are ONLY checked for:
+  #   - Plaintext HTTP requests through forward proxy
+  #   - Request bodies sent through reverse proxy (/proxy/*)
+  # HTTPS CONNECT tunnels are NOT inspected (encrypted end-to-end)
+  # See docs/pii-detection.md for details
   pii_patterns:
-    - "\\b4[0-9]{12}(?:[0-9]{3})?\\b"
-    - "\\b5[1-5][0-9]{14}\\b"
-    - "-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"
-    - "AKIA[0-9A-Z]{16}"
-    - "gh[pous]_[a-zA-Z0-9]{36}"
+    - "\\b4[0-9]{12}(?:[0-9]{3})?\\b"   # Visa card numbers
+    - "\\b5[1-5][0-9]{14}\\b"           # Mastercard numbers
+    - "-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"  # Private keys
+    - "AKIA[0-9A-Z]{16}"                # AWS Access Key ID
+    - "gh[pous]_[a-zA-Z0-9]{36}"        # GitHub tokens
 
 relay:
   enabled: false
@@ -54,7 +65,6 @@ storage:
   path: "/var/lib/parachute/parachute.db"  # Required if type is "sqlite"
 
 # Server configuration
-upstream: "http://openclaw:3000"
-listen: ":8080"
-proxy_listen: ":8888"  # Forward proxy port for agent egress control
-
+upstream: "http://openclaw:3000"    # Agent container address
+listen: ":8080"                     # Main API/Dashboard port
+proxy_listen: ":8888"               # Forward proxy port for agent egress

@@ -1,25 +1,32 @@
 # HARDENED CONFIGURATION
 # Use with: docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
 #
-# This profile adds additional security measures beyond network isolation.
+# This profile adds additional security measures beyond network isolation:
+# - Non-root execution
+# - Dropped capabilities
+# - Read-only filesystems
+# - Resource limits
+# - No privilege escalation
+#
 # For full egress control on the host, see docs/iptables-hardening.md
 
 services:
   parachute:
-    # Run as non-root user
+    # Run as non-root user (UID 1000)
     user: "1000:1000"
-    # Security options
+    # Security hardening options
     security_opt:
       - no-new-privileges:true
+    # Drop ALL capabilities, only add what's needed
     cap_drop:
       - ALL
     cap_add:
-      - NET_BIND_SERVICE
-    # Read-only root filesystem
+      - NET_BIND_SERVICE  # Allow binding to ports < 1024 if needed
+    # Read-only root filesystem prevents tampering
     read_only: true
     tmpfs:
       - /tmp:size=10M,mode=1777
-    # Resource limits
+    # Resource limits prevent DoS
     deploy:
       resources:
         limits:
@@ -28,20 +35,23 @@ services:
         reservations:
           cpus: '0.25'
           memory: 64M
+    # Prevent privilege escalation
+    privileged: false
 
   openclaw:
     # Run as non-root user
     user: "1000:1000"
-    # Security options
+    # Security hardening options
     security_opt:
       - no-new-privileges:true
+    # Drop ALL capabilities - agent needs no special privileges
     cap_drop:
       - ALL
     # Read-only root filesystem where possible
     read_only: true
     tmpfs:
       - /tmp:size=100M,mode=1777
-    # Resource limits
+    # Resource limits for agent
     deploy:
       resources:
         limits:
@@ -50,7 +60,5 @@ services:
         reservations:
           cpus: '0.5'
           memory: 256M
-    # Prevent container escape via /proc
-    pid: "host"
-    # No privileged access
+    # Prevent privilege escalation and container escape
     privileged: false
