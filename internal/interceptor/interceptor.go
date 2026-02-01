@@ -60,6 +60,25 @@ func (i *Interceptor) Check(tc *ToolCall) *Result {
 		}
 	}
 
+	// Check for known fork bomb patterns (before splitting, since they contain `;`)
+	if IsForkBomb(rawCmd) {
+		return &Result{
+			Action:  ActionBlock,
+			Reason:  "fork bomb detected",
+			Command: rawCmd,
+		}
+	}
+
+	// IMPORTANT: Check raw command against block patterns BEFORE splitting
+	// This catches patterns that contain command separators (like fork bombs)
+	if i.policy.ShouldBlock(rawCmd) {
+		return &Result{
+			Action:  ActionBlock,
+			Reason:  "command matches block policy",
+			Command: rawCmd,
+		}
+	}
+
 	// Extract all commands including from shell wrappers and compound commands
 	commands := ExtractAllCommands(rawCmd)
 
@@ -296,7 +315,7 @@ func splitOnOperators(cmd string) []string {
 	return result
 }
 
-// extractCommandSubstitution finds and extracts commands from $() and `` substitutions
+// extractCommandSubstitution finds and extracts commands from $() and “ substitutions
 func extractCommandSubstitution(cmd string) []string {
 	var result []string
 
@@ -376,4 +395,35 @@ func IsBase64Encoded(cmd string) bool {
 	// Look for patterns like: base64 -d | sh, base64 --decode | bash
 	base64PipePattern := regexp.MustCompile(`base64\s+(-d|--decode).*\|\s*(sh|bash|zsh)`)
 	return base64PipePattern.MatchString(cmd)
+}
+
+// IsForkBomb detects various shell fork bomb patterns
+// Fork bombs are dangerous because they consume all system resources
+func IsForkBomb(cmd string) bool {
+	// Known fork bomb patterns (checked via literal string match)
+	forkBombPatterns := []string{
+		":(){ :|:& };:",             // Classic Bash fork bomb
+		":(){ :|:& };: &",           // Variant
+		".(){.|.&};.",               // Variant
+		"bomb(){ bomb|bomb& };bomb", // Named variant
+		":(){:|:&};:",               // No spaces variant
+	}
+
+	// Normalize whitespace for comparison
+	normalized := strings.TrimSpace(cmd)
+
+	for _, pattern := range forkBombPatterns {
+		if normalized == pattern || strings.Contains(normalized, pattern) {
+			return true
+		}
+	}
+
+	// Regex for fork bomb structure: name(){ name|name& };name
+	// This catches variations like: x(){ x|x& };x
+	forkBombRegex := regexp.MustCompile(`^[a-zA-Z_.:]+\(\)\s*\{\s*[a-zA-Z_.:]+\s*\|\s*[a-zA-Z_.:]+\s*&\s*\}\s*;\s*[a-zA-Z_.:]+\s*&?\s*$`)
+	if forkBombRegex.MatchString(normalized) {
+		return true
+	}
+
+	return false
 }

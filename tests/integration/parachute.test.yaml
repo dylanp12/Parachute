@@ -19,6 +19,9 @@ egress:
     - "api.anthropic.com"
     - "httpbin.org"  # For testing
     - "example.com"  # For testing
+    - "pypi.org"     # For pip install
+    - "*.pypi.org"   # PyPI CDN
+    - "files.pythonhosted.org"  # Package hosting
   pii_patterns:
     - "\\b4[0-9]{12}(?:[0-9]{3})?\\b"
     - "-----BEGIN.*PRIVATE KEY-----"

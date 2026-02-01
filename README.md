@@ -1,4 +1,9 @@
-# Parachute
+# 🪂 Parachute
+
+[![CI](https://github.com/parachute-security/parachute/actions/workflows/ci.yml/badge.svg)](https://github.com/parachute-security/parachute/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/go-1.23+-blue.svg)](https://golang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](SECURITY.md)
 
 **The Seatbelt for your AI Agent.**
 
@@ -8,11 +13,13 @@ A security sidecar that sits between the internet and your autonomous AI agent, 
 
 - **Ingress Control**: Basic Auth, Bearer Token, IP whitelisting, rate limiting
 - **Command Interception**: Block or require approval for risky commands
+- **Fork Bomb Detection**: Detects and blocks shell fork bombs
 - **Shell Wrapper Detection**: Detects `bash -c`, `sh -c` and extracts inner commands
 - **Egress Control**: Domain whitelist with HTTPS CONNECT proxy support
 - **PII Detection**: Blocks requests containing credit cards, API keys, private keys
-- **Persistent Approval Queue**: SQLite-backed with TTL and idempotency
+- **Persistent Storage**: SQLite-backed approval queue with TTL
 - **Audit Logging**: Structured JSON logs with correlation IDs
+- **Prometheus Metrics**: `/metrics` endpoint for monitoring
 - **Dashboard**: Real-time web UI for command approval
 
 ## Quick Start
@@ -139,6 +146,8 @@ storage:
 |----------|------|-------------|
 | `GET /health` | No | Health check |
 | `GET /healthz` | No | Kubernetes health check |
+| `GET /version` | No | Version info |
+| `GET /metrics` | No | Prometheus metrics |
 | `GET /dashboard/*` | Yes | Approval web UI |
 | `GET /api/pending` | Yes | List pending commands |
 | `GET /api/pending/:id` | Yes | Get specific pending command |
@@ -222,13 +231,14 @@ parachute/
 │   ├── config/            # Configuration loading
 │   ├── dashboard/         # Web UI
 │   ├── egress/            # Domain whitelist, PII detection
-│   ├── interceptor/       # Command parsing, shell wrapper detection
+│   ├── interceptor/       # Command parsing, fork bomb detection
+│   ├── metrics/           # Prometheus metrics
 │   ├── middleware/        # Auth, rate limiting, correlation ID
 │   ├── proxy/             # Reverse proxy + forward proxy
-│   ├── relay/             # Cloud relay (Phase 3)
+│   ├── relay/             # Cloud relay (Phase 3 - placeholder)
 │   └── storage/           # SQLite persistence
 ├── tests/integration/     # Integration tests
-├── docs/                  # Documentation
+├── .github/               # CI/CD workflows, issue templates
 ├── docker-compose.yml     # Standard deployment
 ├── docker-compose.hardened.yml  # Hardened deployment
 └── Makefile               # Build targets

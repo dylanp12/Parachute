@@ -18,6 +18,7 @@ import (
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/config"
 	"github.com/parachute-security/parachute/internal/dashboard"
+	"github.com/parachute-security/parachute/internal/metrics"
 	"github.com/parachute-security/parachute/internal/middleware"
 	"github.com/parachute-security/parachute/internal/proxy"
 	"github.com/parachute-security/parachute/internal/relay"
@@ -98,13 +99,14 @@ func main() {
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"}, // Configure properly for production
-		AllowCredentials: true,
+		AllowOrigins: []string{"*"}, // Wildcard for development; set specific origins in production
 	}))
 
-	// Health check endpoint - no auth required
+	// Health check and metrics endpoints - no auth required
 	app.Get("/health", proxy.HealthHandler())
 	app.Get("/healthz", proxy.HealthHandler()) // Kubernetes-style alias
+	app.Get("/version", proxy.VersionHandler(version))
+	app.Get("/metrics", metrics.Handler()) // Prometheus metrics
 
 	// Dashboard routes - auth required
 	dashboardGroup := app.Group("/dashboard")
@@ -174,8 +176,8 @@ func main() {
 	log.Println("Goodbye!")
 }
 
-// loadWebhooks loads webhook configurations from config
+// loadWebhooks loads webhook configurations from config.
+// Currently returns empty list - webhook configuration via config file planned for v1.1.
 func loadWebhooks(cfg *config.Config) []approval.WebhookConfig {
-	// TODO: Load from config file when webhook config is added
 	return []approval.WebhookConfig{}
 }

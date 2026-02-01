@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -73,8 +74,15 @@ func (p *Proxy) Handler() fiber.Handler {
 			}
 		}
 
-		// Build upstream request
-		upstreamURL := p.upstream + c.OriginalURL()
+		// Build upstream request - strip /proxy prefix from path
+		path := c.OriginalURL()
+		if strings.HasPrefix(path, "/proxy") {
+			path = strings.TrimPrefix(path, "/proxy")
+			if path == "" {
+				path = "/"
+			}
+		}
+		upstreamURL := p.upstream + path
 		req, err := http.NewRequestWithContext(c.Context(), c.Method(), upstreamURL, bytes.NewReader(body))
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to create upstream request"})
@@ -158,6 +166,17 @@ func HealthHandler() fiber.Handler {
 			"status":  "ok",
 			"service": "parachute",
 			"time":    time.Now().Format(time.RFC3339),
+		})
+	}
+}
+
+// VersionHandler returns the current version of Parachute
+func VersionHandler(version string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"version":   version,
+			"service":   "parachute",
+			"goVersion": "go1.21+",
 		})
 	}
 }

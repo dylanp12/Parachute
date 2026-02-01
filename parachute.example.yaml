@@ -48,5 +48,13 @@ relay:
   # server_url: "wss://relay.parachute.io/ws"
   # api_key: "your-api-key"
 
+# Storage configuration
+storage:
+  type: "memory"  # Options: "memory" (volatile) or "sqlite" (persistent)
+  path: "/var/lib/parachute/parachute.db"  # Required if type is "sqlite"
+
+# Server configuration
 upstream: "http://openclaw:3000"
 listen: ":8080"
+proxy_listen: ":8888"  # Forward proxy port for agent egress control
+
