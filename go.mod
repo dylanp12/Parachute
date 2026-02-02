@@ -3,8 +3,10 @@ module github.com/parachute-security/parachute
 go 1.25.0
 
 require (
+	github.com/gofiber/contrib/v3 v3.0.0-rc.2
 	github.com/gofiber/fiber/v3 v3.0.0-rc.3
 	github.com/google/uuid v1.6.0
+	github.com/gorilla/websocket v1.5.3
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.29.0
 )

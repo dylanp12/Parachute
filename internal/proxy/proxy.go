@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/config"
@@ -58,8 +59,8 @@ func New(cfg *config.Config, approvalQ *approval.Queue, notifier *approval.Notif
 // Handler returns the Fiber handler for proxying requests
 func (p *Proxy) Handler() fiber.Handler {
 	return func(c fiber.Ctx) error {
-		// Check for WebSocket upgrade request
-		if isWebSocketUpgrade(c) {
+		// Check for WebSocket upgrade request - delegate to WebSocket handler
+		if websocket.IsWebSocketUpgrade(c) {
 			return p.handleWebSocket(c)
 		}
 
@@ -184,16 +185,17 @@ func (p *Proxy) handleStreaming(c fiber.Ctx, body []byte) error {
 		log.Printf("[ERROR] Upstream streaming request failed: %v", err)
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "upstream request failed"})
 	}
-	defer resp.Body.Close()
 
-	// Set response headers
+	// Set response headers before streaming
 	c.Set("Content-Type", resp.Header.Get("Content-Type"))
 	c.Set("Cache-Control", "no-cache")
 	c.Set("Connection", "keep-alive")
 	c.Status(resp.StatusCode)
 
-	// Stream the response
-	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+	// Use Fiber v3's SendStreamWriter for streaming responses
+	return c.SendStreamWriter(func(w *bufio.Writer) {
+		defer resp.Body.Close()
+
 		reader := bufio.NewReader(resp.Body)
 		for {
 			line, err := reader.ReadBytes('\n')
@@ -213,70 +215,104 @@ func (p *Proxy) handleStreaming(c fiber.Ctx, body []byte) error {
 			}
 		}
 	})
-
-	return nil
 }
 
-// handleWebSocket handles WebSocket upgrade requests
-func (p *Proxy) handleWebSocket(c fiber.Ctx) error {
-	log.Printf("[WEBSOCKET] Upgrade request for %s", c.Path())
+// WebSocketHandler returns a Fiber handler for WebSocket upgrade requests
+// This should be registered with the websocket.New() middleware
+func (p *Proxy) WebSocketHandler() fiber.Handler {
+	return websocket.New(func(c *websocket.Conn) {
+		defer c.Close()
 
-	// Get the underlying connection
-	c.Context().Hijack(func(clientConn net.Conn) {
-		defer clientConn.Close()
-
-		// Build upstream URL (convert http to ws)
-		path := c.OriginalURL()
-		if strings.HasPrefix(path, "/proxy") {
-			path = strings.TrimPrefix(path, "/proxy")
-			if path == "" {
-				path = "/"
-			}
+		// Get the path from locals (set before upgrade)
+		path, _ := c.Locals("proxy_path").(string)
+		if path == "" {
+			path = "/"
 		}
 
+		// Build upstream WebSocket URL
 		upstreamURL := p.upstream + path
 		upstreamURL = strings.Replace(upstreamURL, "http://", "ws://", 1)
 		upstreamURL = strings.Replace(upstreamURL, "https://", "wss://", 1)
 
-		// Connect to upstream WebSocket
-		dialer := net.Dialer{Timeout: 30 * time.Second}
-		upstreamConn, err := dialer.Dial("tcp", extractHost(p.upstream))
+		log.Printf("[WEBSOCKET] Connecting to upstream: %s", upstreamURL)
+
+		// Connect to upstream WebSocket using gorilla websocket dialer
+		dialer := websocket.Dialer{
+			HandshakeTimeout: 30 * time.Second,
+		}
+
+		upstreamConn, _, err := dialer.Dial(upstreamURL, nil)
 		if err != nil {
 			log.Printf("[WEBSOCKET] Failed to connect to upstream: %v", err)
-			clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
 			return
 		}
 		defer upstreamConn.Close()
 
-		// Forward the original request to upstream
-		req := fmt.Sprintf("%s %s HTTP/1.1\r\n", c.Method(), path)
-		c.Request().Header.VisitAll(func(key, value []byte) {
-			req += fmt.Sprintf("%s: %s\r\n", string(key), string(value))
-		})
-		req += "\r\n"
+		log.Printf("[WEBSOCKET] Connected to upstream: %s", upstreamURL)
 
-		if _, err := upstreamConn.Write([]byte(req)); err != nil {
-			log.Printf("[WEBSOCKET] Failed to send upgrade request: %v", err)
-			clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\n"))
-			return
-		}
+		// Bidirectional proxy using goroutines
+		var wg sync.WaitGroup
+		wg.Add(2)
 
-		// Bidirectional copy
-		done := make(chan struct{}, 2)
+		// Client -> Upstream
 		go func() {
-			io.Copy(upstreamConn, clientConn)
-			done <- struct{}{}
-		}()
-		go func() {
-			io.Copy(clientConn, upstreamConn)
-			done <- struct{}{}
+			defer wg.Done()
+			for {
+				messageType, message, err := c.ReadMessage()
+				if err != nil {
+					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+						log.Printf("[WEBSOCKET] Client read error: %v", err)
+					}
+					upstreamConn.Close()
+					return
+				}
+				if err := upstreamConn.WriteMessage(messageType, message); err != nil {
+					log.Printf("[WEBSOCKET] Upstream write error: %v", err)
+					return
+				}
+			}
 		}()
 
-		<-done
-		log.Printf("[WEBSOCKET] Connection closed for %s", c.Path())
+		// Upstream -> Client
+		go func() {
+			defer wg.Done()
+			for {
+				messageType, message, err := upstreamConn.ReadMessage()
+				if err != nil {
+					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+						log.Printf("[WEBSOCKET] Upstream read error: %v", err)
+					}
+					c.Close()
+					return
+				}
+				if err := c.WriteMessage(messageType, message); err != nil {
+					log.Printf("[WEBSOCKET] Client write error: %v", err)
+					return
+				}
+			}
+		}()
+
+		wg.Wait()
+		log.Printf("[WEBSOCKET] Connection closed for %s", path)
 	})
+}
 
-	return nil
+// handleWebSocket handles WebSocket upgrade requests
+func (p *Proxy) handleWebSocket(c fiber.Ctx) error {
+	// Store the path for the WebSocket handler
+	path := c.OriginalURL()
+	if strings.HasPrefix(path, "/proxy") {
+		path = strings.TrimPrefix(path, "/proxy")
+		if path == "" {
+			path = "/"
+		}
+	}
+	c.Locals("proxy_path", path)
+
+	log.Printf("[WEBSOCKET] Upgrade request for %s", path)
+
+	// Use the WebSocket handler
+	return p.WebSocketHandler()(c)
 }
 
 // handleOpenClawToolInvoke handles OpenClaw's POST /tools/invoke endpoint
@@ -405,12 +441,6 @@ func (p *Proxy) checkToolCalls(ctx context.Context, body []byte) (blocked bool, 
 
 // Helper functions
 
-func isWebSocketUpgrade(c fiber.Ctx) bool {
-	upgrade := strings.ToLower(c.Get("Upgrade"))
-	connection := strings.ToLower(c.Get("Connection"))
-	return upgrade == "websocket" && strings.Contains(connection, "upgrade")
-}
-
 func isStreamingRequest(c fiber.Ctx) bool {
 	accept := c.Get("Accept")
 	return strings.Contains(accept, "text/event-stream") ||
@@ -430,19 +460,6 @@ func isHopByHopHeader(header string) bool {
 		"Upgrade":             true,
 	}
 	return hopByHop[header]
-}
-
-func extractHost(url string) string {
-	url = strings.TrimPrefix(url, "http://")
-	url = strings.TrimPrefix(url, "https://")
-	if idx := strings.Index(url, "/"); idx != -1 {
-		url = url[:idx]
-	}
-	// Add default port if not present
-	if !strings.Contains(url, ":") {
-		url += ":80"
-	}
-	return url
 }
 
 // isCommandTool checks if a tool name is a shell/command execution tool
