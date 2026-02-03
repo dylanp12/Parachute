@@ -3,10 +3,10 @@ package relay
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"sync"
 	"time"
 
+	"github.com/gofiber/fiber/v3/log"
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/config"
 )
@@ -39,11 +39,11 @@ func New(cfg *config.RelayConfig, approvalQ *approval.Queue) *Client {
 // Start begins the relay connection (run in goroutine)
 func (c *Client) Start(ctx context.Context) {
 	if !c.cfg.Enabled {
-		log.Println("[RELAY] Relay disabled, running in local-only mode")
+		log.Info("[RELAY] Relay disabled, running in local-only mode")
 		return
 	}
 
-	log.Printf("[RELAY] Connecting to relay server: %s", c.cfg.ServerURL)
+	log.Infof("[RELAY] Connecting to relay server: %s", c.cfg.ServerURL)
 
 	for {
 		select {
@@ -53,7 +53,7 @@ func (c *Client) Start(ctx context.Context) {
 			return
 		default:
 			if err := c.connect(ctx); err != nil {
-				log.Printf("[RELAY] Connection failed: %v, retrying in 10s", err)
+				log.Warnf("[RELAY] Connection failed: %v, retrying in 10s", err)
 				time.Sleep(10 * time.Second)
 			}
 		}
@@ -82,7 +82,7 @@ func (c *Client) connect(ctx context.Context) error {
 	// defer conn.Close()
 	// for { _, msg, err := conn.ReadMessage(); c.handleMessage(msg) }
 
-	log.Println("[RELAY] WebSocket client placeholder - install gorilla/websocket for production")
+	log.Info("[RELAY] WebSocket client placeholder - install gorilla/websocket for production")
 
 	select {
 	case <-ctx.Done():
@@ -97,7 +97,7 @@ func (c *Client) connect(ctx context.Context) error {
 func (c *Client) handleMessage(data []byte) {
 	var msg Message
 	if err := json.Unmarshal(data, &msg); err != nil {
-		log.Printf("[RELAY] Invalid message: %v", err)
+		log.Warnf("[RELAY] Invalid message: %v", err)
 		return
 	}
 
@@ -105,14 +105,14 @@ func (c *Client) handleMessage(data []byte) {
 	case "approve":
 		if msg.ID != "" {
 			c.approvalQ.Approve(msg.ID)
-			log.Printf("[RELAY] Approved via relay: %s", msg.ID)
+			log.Infof("[RELAY] Approved via relay: %s", msg.ID)
 		}
 	case "deny":
 		if msg.ID != "" {
 			c.approvalQ.Deny(msg.ID)
-			log.Printf("[RELAY] Denied via relay: %s", msg.ID)
+			log.Infof("[RELAY] Denied via relay: %s", msg.ID)
 		}
 	default:
-		log.Printf("[RELAY] Unknown message type: %s", msg.Type)
+		log.Warnf("[RELAY] Unknown message type: %s", msg.Type)
 	}
 }

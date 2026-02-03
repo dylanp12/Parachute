@@ -3,11 +3,11 @@ package audit
 import (
 	"encoding/json"
 	"io"
-	"log"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/gofiber/fiber/v3/log"
 	"github.com/google/uuid"
 )
 
@@ -88,7 +88,7 @@ func (l *Logger) Log(event *Event) {
 	defer l.mu.Unlock()
 
 	if err := l.encoder.Encode(event); err != nil {
-		log.Printf("[AUDIT:ERROR] Failed to write audit log: %v", err)
+		log.Errorf("[AUDIT:ERROR] Failed to write audit log: %v", err)
 	}
 }
 
