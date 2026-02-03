@@ -316,82 +316,130 @@ func (p *Proxy) handleWebSocket(c fiber.Ctx) error {
 }
 
 // handleOpenClawToolInvoke handles OpenClaw's POST /tools/invoke endpoint
-// This applies Parachute's risk_policy to tool invocations
+// This applies Parachute's risk_policy to tool invocations.
+//
+// SECURITY: This handler implements FAIL-CLOSED behavior. If we cannot parse
+// the request into a known tool invocation format, we DENY the request rather
+// than forwarding it. This prevents attackers from crafting unparseable payloads
+// to bypass security controls.
 func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
-	log.Printf("[OPENCLAW] Processing tools/invoke request")
-
-	// Parse the OpenClaw tool invoke request
-	var invokeReq struct {
-		Tool   string         `json:"tool"`
-		Input  map[string]any `json:"input"`
-		Config map[string]any `json:"config,omitempty"`
+	correlationID := c.Get("X-Correlation-ID")
+	if correlationID == "" {
+		correlationID = fmt.Sprintf("req-%d", time.Now().UnixNano())
 	}
 
-	if err := json.Unmarshal(body, &invokeReq); err != nil {
-		// Not a valid OpenClaw request, forward as-is
-		return p.handleStandardRequest(c, body)
+	log.Printf("[OPENCLAW] [%s] Processing tools/invoke request (%d bytes)", correlationID, len(body))
+
+	// Use the tolerant normalizer to parse various payload formats
+	normalized, err := interceptor.NormalizeToolInvoke(body)
+	if err != nil {
+		// FAIL-CLOSED: If we can't parse the tool invocation, deny the request
+		// This prevents attackers from crafting malformed payloads to bypass security
+		log.Printf("[OPENCLAW:PARSE_ERROR] [%s] Failed to parse tool invocation: %v", correlationID, err)
+
+		// Truncate raw body for logging (avoid logging huge payloads)
+		rawPreview := string(body)
+		if len(rawPreview) > 200 {
+			rawPreview = rawPreview[:200] + "..."
+		}
+		log.Printf("[OPENCLAW:PARSE_ERROR] [%s] Raw payload preview: %s", correlationID, rawPreview)
+
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error":          "unable to parse tool invocation request",
+			"reason":         "request does not match any known tool invocation format",
+			"blocked":        true,
+			"correlation_id": correlationID,
+			"hint":           "expected formats: {tool,input}, {tool,args}, {action,args}, {name,args}, {tool_name,tool_input}, or {type:'tool_use',name,input}",
+		})
 	}
 
-	// Check if this is a shell/command tool
-	if isCommandTool(invokeReq.Tool) {
-		command := extractCommandFromInput(invokeReq.Input)
+	log.Printf("[OPENCLAW] [%s] Parsed tool invocation: %s", correlationID, normalized.String())
+
+	// Log any unknown keys for monitoring (helps detect new payload formats)
+	normalized.LogUnknownKeys(correlationID)
+
+	// Check if this is a shell/command execution tool
+	if normalized.IsCommandTool() {
+		command := normalized.Command
 		if command != "" {
-			tc := &interceptor.ToolCall{
-				Name:    invokeReq.Tool,
-				Command: command,
-				Args:    invokeReq.Input,
-			}
-
+			tc := normalized.ToToolCall()
 			result := p.interceptor.Check(tc)
 
 			switch result.Action {
 			case interceptor.ActionBlock:
-				log.Printf("[OPENCLAW:BLOCKED] Tool %s command blocked: %s (reason: %s)",
-					invokeReq.Tool, command, result.Reason)
+				log.Printf("[OPENCLAW:BLOCKED] [%s] Tool %s command blocked: %s (reason: %s, format: %s)",
+					correlationID, normalized.ToolName, truncateCommand(command), result.Reason, normalized.Format)
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-					"error":   "tool invocation blocked by policy",
-					"tool":    invokeReq.Tool,
-					"reason":  result.Reason,
-					"blocked": true,
+					"error":          "tool invocation blocked by policy",
+					"tool":           normalized.ToolName,
+					"reason":         result.Reason,
+					"blocked":        true,
+					"correlation_id": correlationID,
 				})
 
 			case interceptor.ActionPending:
-				log.Printf("[OPENCLAW:PENDING] Tool %s requires approval: %s", invokeReq.Tool, command)
+				log.Printf("[OPENCLAW:PENDING] [%s] Tool %s requires approval: %s (format: %s)",
+					correlationID, normalized.ToolName, truncateCommand(command), normalized.Format)
 
-				pc := p.approvalQ.Add(command, invokeReq.Tool, result.Reason, invokeReq.Input)
+				pc := p.approvalQ.Add(command, normalized.ToolName, result.Reason, normalized.Args)
 				if err := p.notifier.NotifyPending(pc); err != nil {
-					log.Printf("[WARN] Failed to send notification: %v", err)
+					log.Printf("[WARN] [%s] Failed to send notification: %v", correlationID, err)
 				}
 
 				decision := p.approvalQ.Wait(c.Context(), pc.ID)
 
 				switch decision {
 				case approval.DecisionApproved:
-					log.Printf("[OPENCLAW:APPROVED] Tool %s approved: %s", invokeReq.Tool, command)
+					log.Printf("[OPENCLAW:APPROVED] [%s] Tool %s approved: %s",
+						correlationID, normalized.ToolName, truncateCommand(command))
 					// Continue to forward the request
 				case approval.DecisionDenied:
-					log.Printf("[OPENCLAW:DENIED] Tool %s denied: %s", invokeReq.Tool, command)
+					log.Printf("[OPENCLAW:DENIED] [%s] Tool %s denied: %s",
+						correlationID, normalized.ToolName, truncateCommand(command))
 					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-						"error":   "tool invocation denied",
-						"tool":    invokeReq.Tool,
-						"reason":  "request was denied by operator",
-						"blocked": true,
+						"error":          "tool invocation denied",
+						"tool":           normalized.ToolName,
+						"reason":         "request was denied by operator",
+						"blocked":        true,
+						"correlation_id": correlationID,
 					})
 				default:
-					log.Printf("[OPENCLAW:EXPIRED] Tool %s approval timed out: %s", invokeReq.Tool, command)
+					log.Printf("[OPENCLAW:EXPIRED] [%s] Tool %s approval timed out: %s",
+						correlationID, normalized.ToolName, truncateCommand(command))
 					return c.Status(fiber.StatusGatewayTimeout).JSON(fiber.Map{
-						"error":   "approval timed out",
-						"tool":    invokeReq.Tool,
-						"reason":  "request was not approved in time",
-						"blocked": true,
+						"error":          "approval timed out",
+						"tool":           normalized.ToolName,
+						"reason":         "request was not approved in time",
+						"blocked":        true,
+						"correlation_id": correlationID,
 					})
 				}
+			default:
+				log.Printf("[OPENCLAW:ALLOWED] [%s] Tool %s command allowed: %s (format: %s)",
+					correlationID, normalized.ToolName, truncateCommand(command), normalized.Format)
 			}
+		} else {
+			// Command tool but no command found - log warning but allow
+			// (the tool might use different semantics)
+			log.Printf("[OPENCLAW:WARN] [%s] Command tool %s has no extractable command (format: %s)",
+				correlationID, normalized.ToolName, normalized.Format)
 		}
+	} else {
+		// Non-command tool - allow to pass through
+		log.Printf("[OPENCLAW:PASSTHROUGH] [%s] Non-command tool %s (format: %s)",
+			correlationID, normalized.ToolName, normalized.Format)
 	}
 
 	// Forward the request to upstream
 	return p.handleStandardRequest(c, body)
+}
+
+// truncateCommand truncates a command for safe logging
+func truncateCommand(cmd string) string {
+	if len(cmd) > 100 {
+		return cmd[:100] + "..."
+	}
+	return cmd
 }
 
 func (p *Proxy) checkToolCalls(ctx context.Context, body []byte) (blocked bool, err error) {
