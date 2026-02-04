@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/log"
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/config"
 	"github.com/parachute-security/parachute/internal/egress"
@@ -70,7 +70,7 @@ func (p *Proxy) Handler() fiber.Handler {
 		if len(body) > 0 {
 			result := p.egress.CheckContent(string(body))
 			if !result.Allowed {
-				log.Printf("[BLOCKED] PII detected in request: %s", result.Pattern)
+				log.Warnf("[BLOCKED] PII detected in request: %s", result.Pattern)
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":   "request blocked",
 					"reason":  result.Reason,
@@ -135,7 +135,7 @@ func (p *Proxy) handleStandardRequest(c fiber.Ctx, body []byte) error {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		log.Printf("[ERROR] Upstream request failed: %v", err)
+		log.Errorf("Upstream request failed: %v", err)
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "upstream request failed"})
 	}
 	defer resp.Body.Close()
@@ -182,7 +182,7 @@ func (p *Proxy) handleStreaming(c fiber.Ctx, body []byte) error {
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		log.Printf("[ERROR] Upstream streaming request failed: %v", err)
+		log.Errorf("Upstream streaming request failed: %v", err)
 		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "upstream request failed"})
 	}
 
@@ -201,16 +201,16 @@ func (p *Proxy) handleStreaming(c fiber.Ctx, body []byte) error {
 			line, err := reader.ReadBytes('\n')
 			if err != nil {
 				if err != io.EOF {
-					log.Printf("[ERROR] Streaming read error: %v", err)
+					log.Errorf("Streaming read error: %v", err)
 				}
 				break
 			}
 			if _, err := w.Write(line); err != nil {
-				log.Printf("[ERROR] Streaming write error: %v", err)
+				log.Errorf("Streaming write error: %v", err)
 				break
 			}
 			if err := w.Flush(); err != nil {
-				log.Printf("[ERROR] Streaming flush error: %v", err)
+				log.Errorf("Streaming flush error: %v", err)
 				break
 			}
 		}
@@ -234,7 +234,7 @@ func (p *Proxy) WebSocketHandler() fiber.Handler {
 		upstreamURL = strings.Replace(upstreamURL, "http://", "ws://", 1)
 		upstreamURL = strings.Replace(upstreamURL, "https://", "wss://", 1)
 
-		log.Printf("[WEBSOCKET] Connecting to upstream: %s", upstreamURL)
+		log.Infof("[WEBSOCKET] Connecting to upstream: %s", upstreamURL)
 
 		// Connect to upstream WebSocket using gorilla websocket dialer
 		dialer := websocket.Dialer{
@@ -243,12 +243,12 @@ func (p *Proxy) WebSocketHandler() fiber.Handler {
 
 		upstreamConn, _, err := dialer.Dial(upstreamURL, nil)
 		if err != nil {
-			log.Printf("[WEBSOCKET] Failed to connect to upstream: %v", err)
+			log.Errorf("[WEBSOCKET] Failed to connect to upstream: %v", err)
 			return
 		}
 		defer upstreamConn.Close()
 
-		log.Printf("[WEBSOCKET] Connected to upstream: %s", upstreamURL)
+		log.Infof("[WEBSOCKET] Connected to upstream: %s", upstreamURL)
 
 		// Bidirectional proxy using goroutines
 		var wg sync.WaitGroup
@@ -261,13 +261,13 @@ func (p *Proxy) WebSocketHandler() fiber.Handler {
 				messageType, message, err := c.ReadMessage()
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-						log.Printf("[WEBSOCKET] Client read error: %v", err)
+						log.Errorf("[WEBSOCKET] Client read error: %v", err)
 					}
 					upstreamConn.Close()
 					return
 				}
 				if err := upstreamConn.WriteMessage(messageType, message); err != nil {
-					log.Printf("[WEBSOCKET] Upstream write error: %v", err)
+					log.Errorf("[WEBSOCKET] Upstream write error: %v", err)
 					return
 				}
 			}
@@ -280,20 +280,20 @@ func (p *Proxy) WebSocketHandler() fiber.Handler {
 				messageType, message, err := upstreamConn.ReadMessage()
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
-						log.Printf("[WEBSOCKET] Upstream read error: %v", err)
+						log.Errorf("[WEBSOCKET] Upstream read error: %v", err)
 					}
 					c.Close()
 					return
 				}
 				if err := c.WriteMessage(messageType, message); err != nil {
-					log.Printf("[WEBSOCKET] Client write error: %v", err)
+					log.Errorf("[WEBSOCKET] Client write error: %v", err)
 					return
 				}
 			}
 		}()
 
 		wg.Wait()
-		log.Printf("[WEBSOCKET] Connection closed for %s", path)
+		log.Infof("[WEBSOCKET] Connection closed for %s", path)
 	})
 }
 
@@ -309,7 +309,7 @@ func (p *Proxy) handleWebSocket(c fiber.Ctx) error {
 	}
 	c.Locals("proxy_path", path)
 
-	log.Printf("[WEBSOCKET] Upgrade request for %s", path)
+	log.Infof("[WEBSOCKET] Upgrade request for %s", path)
 
 	// Use the WebSocket handler
 	return p.WebSocketHandler()(c)
@@ -328,21 +328,21 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 		correlationID = fmt.Sprintf("req-%d", time.Now().UnixNano())
 	}
 
-	log.Printf("[OPENCLAW] [%s] Processing tools/invoke request (%d bytes)", correlationID, len(body))
+	log.Infof("[OPENCLAW] [%s] Processing tools/invoke request (%d bytes)", correlationID, len(body))
 
 	// Use the tolerant normalizer to parse various payload formats
 	normalized, err := interceptor.NormalizeToolInvoke(body)
 	if err != nil {
 		// FAIL-CLOSED: If we can't parse the tool invocation, deny the request
 		// This prevents attackers from crafting malformed payloads to bypass security
-		log.Printf("[OPENCLAW:PARSE_ERROR] [%s] Failed to parse tool invocation: %v", correlationID, err)
+		log.Warnf("[OPENCLAW:PARSE_ERROR] [%s] Failed to parse tool invocation: %v", correlationID, err)
 
 		// Truncate raw body for logging (avoid logging huge payloads)
 		rawPreview := string(body)
 		if len(rawPreview) > 200 {
 			rawPreview = rawPreview[:200] + "..."
 		}
-		log.Printf("[OPENCLAW:PARSE_ERROR] [%s] Raw payload preview: %s", correlationID, rawPreview)
+		log.Warnf("[OPENCLAW:PARSE_ERROR] [%s] Raw payload preview: %s", correlationID, rawPreview)
 
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error":          "unable to parse tool invocation request",
@@ -353,7 +353,7 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 		})
 	}
 
-	log.Printf("[OPENCLAW] [%s] Parsed tool invocation: %s", correlationID, normalized.String())
+	log.Infof("[OPENCLAW] [%s] Parsed tool invocation: %s", correlationID, normalized.String())
 
 	// Log any unknown keys for monitoring (helps detect new payload formats)
 	normalized.LogUnknownKeys(correlationID)
@@ -367,7 +367,7 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 
 			switch result.Action {
 			case interceptor.ActionBlock:
-				log.Printf("[OPENCLAW:BLOCKED] [%s] Tool %s command blocked: %s (reason: %s, format: %s)",
+				log.Warnf("[OPENCLAW:BLOCKED] [%s] Tool %s command blocked: %s (reason: %s, format: %s)",
 					correlationID, normalized.ToolName, truncateCommand(command), result.Reason, normalized.Format)
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":          "tool invocation blocked by policy",
@@ -378,23 +378,23 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 				})
 
 			case interceptor.ActionPending:
-				log.Printf("[OPENCLAW:PENDING] [%s] Tool %s requires approval: %s (format: %s)",
+				log.Infof("[OPENCLAW:PENDING] [%s] Tool %s requires approval: %s (format: %s)",
 					correlationID, normalized.ToolName, truncateCommand(command), normalized.Format)
 
 				pc := p.approvalQ.Add(command, normalized.ToolName, result.Reason, normalized.Args)
 				if err := p.notifier.NotifyPending(pc); err != nil {
-					log.Printf("[WARN] [%s] Failed to send notification: %v", correlationID, err)
+					log.Warnf("[%s] Failed to send notification: %v", correlationID, err)
 				}
 
 				decision := p.approvalQ.Wait(c.Context(), pc.ID)
 
 				switch decision {
 				case approval.DecisionApproved:
-					log.Printf("[OPENCLAW:APPROVED] [%s] Tool %s approved: %s",
+					log.Infof("[OPENCLAW:APPROVED] [%s] Tool %s approved: %s",
 						correlationID, normalized.ToolName, truncateCommand(command))
 					// Continue to forward the request
 				case approval.DecisionDenied:
-					log.Printf("[OPENCLAW:DENIED] [%s] Tool %s denied: %s",
+					log.Warnf("[OPENCLAW:DENIED] [%s] Tool %s denied: %s",
 						correlationID, normalized.ToolName, truncateCommand(command))
 					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 						"error":          "tool invocation denied",
@@ -404,7 +404,7 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 						"correlation_id": correlationID,
 					})
 				default:
-					log.Printf("[OPENCLAW:EXPIRED] [%s] Tool %s approval timed out: %s",
+					log.Warnf("[OPENCLAW:EXPIRED] [%s] Tool %s approval timed out: %s",
 						correlationID, normalized.ToolName, truncateCommand(command))
 					return c.Status(fiber.StatusGatewayTimeout).JSON(fiber.Map{
 						"error":          "approval timed out",
@@ -415,18 +415,18 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 					})
 				}
 			default:
-				log.Printf("[OPENCLAW:ALLOWED] [%s] Tool %s command allowed: %s (format: %s)",
+				log.Infof("[OPENCLAW:ALLOWED] [%s] Tool %s command allowed: %s (format: %s)",
 					correlationID, normalized.ToolName, truncateCommand(command), normalized.Format)
 			}
 		} else {
 			// Command tool but no command found - log warning but allow
 			// (the tool might use different semantics)
-			log.Printf("[OPENCLAW:WARN] [%s] Command tool %s has no extractable command (format: %s)",
+			log.Warnf("[OPENCLAW:WARN] [%s] Command tool %s has no extractable command (format: %s)",
 				correlationID, normalized.ToolName, normalized.Format)
 		}
 	} else {
 		// Non-command tool - allow to pass through
-		log.Printf("[OPENCLAW:PASSTHROUGH] [%s] Non-command tool %s (format: %s)",
+		log.Infof("[OPENCLAW:PASSTHROUGH] [%s] Non-command tool %s (format: %s)",
 			correlationID, normalized.ToolName, normalized.Format)
 	}
 
@@ -457,28 +457,28 @@ func (p *Proxy) checkToolCalls(ctx context.Context, body []byte) (blocked bool, 
 
 	switch result.Action {
 	case interceptor.ActionBlock:
-		log.Printf("[BLOCKED] Command blocked: %s (reason: %s)", tc.Command, result.Reason)
+		log.Warnf("[BLOCKED] Command blocked: %s (reason: %s)", tc.Command, result.Reason)
 		return true, nil
 
 	case interceptor.ActionPending:
-		log.Printf("[PENDING] Command requires approval: %s", tc.Command)
+		log.Infof("[PENDING] Command requires approval: %s", tc.Command)
 
 		pc := p.approvalQ.Add(tc.Command, tc.Name, result.Reason, tc.Args)
 		if err := p.notifier.NotifyPending(pc); err != nil {
-			log.Printf("[WARN] Failed to send notification: %v", err)
+			log.Warnf("Failed to send notification: %v", err)
 		}
 
 		decision := p.approvalQ.Wait(ctx, pc.ID)
 
 		switch decision {
 		case approval.DecisionApproved:
-			log.Printf("[APPROVED] Command approved: %s", tc.Command)
+			log.Infof("[APPROVED] Command approved: %s", tc.Command)
 			return false, nil
 		case approval.DecisionDenied:
-			log.Printf("[DENIED] Command denied: %s", tc.Command)
+			log.Warnf("[DENIED] Command denied: %s", tc.Command)
 			return true, nil
 		default:
-			log.Printf("[EXPIRED] Approval timed out: %s", tc.Command)
+			log.Warnf("[EXPIRED] Approval timed out: %s", tc.Command)
 			return true, fmt.Errorf("approval timed out")
 		}
 

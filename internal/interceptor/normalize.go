@@ -3,8 +3,9 @@ package interceptor
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
+
+	"github.com/gofiber/fiber/v3/log"
 )
 
 // NormalizedToolInvoke represents a tool invocation request normalized from various formats.
@@ -264,7 +265,7 @@ func (n *NormalizedToolInvoke) ToToolCall() *ToolCall {
 // LogUnknownKeys logs any unrecognized keys found in the payload (for monitoring)
 func (n *NormalizedToolInvoke) LogUnknownKeys(correlationID string) {
 	if len(n.UnknownKeys) > 0 {
-		log.Printf("[WARN] [%s] Unknown keys in tool invoke payload (format=%s): %v",
+		log.Warnf("[%s] Unknown keys in tool invoke payload (format=%s): %v",
 			correlationID, n.Format, n.UnknownKeys)
 	}
 }

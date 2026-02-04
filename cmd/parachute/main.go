@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/log"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
@@ -48,18 +48,18 @@ func main() {
 	authConfigured := cfg.Auth.Username != "" || cfg.Auth.Token != ""
 	if !authConfigured {
 		if cfg.Auth.AllowInsecure {
-			log.Printf("[WARN] Running in INSECURE mode without authentication!")
-			log.Printf("[WARN] This should only be used for development.")
+			log.Warn("Running in INSECURE mode without authentication!")
+			log.Warn("This should only be used for development.")
 		} else {
-			log.Fatalf("[FATAL] No authentication configured and allow_insecure is not set.")
+			log.Fatal("No authentication configured and allow_insecure is not set.")
 		}
 	}
 
-	log.Printf("Starting Parachute %s", version)
-	log.Printf("Upstream: %s", cfg.Upstream)
-	log.Printf("Listen: %s", cfg.Listen)
-	log.Printf("Forward Proxy: %s", cfg.ProxyListen)
-	log.Printf("Storage: %s", cfg.Storage.Type)
+	log.Infof("Starting Parachute %s", version)
+	log.Infof("Upstream: %s", cfg.Upstream)
+	log.Infof("Listen: %s", cfg.Listen)
+	log.Infof("Forward Proxy: %s", cfg.ProxyListen)
+	log.Infof("Storage: %s", cfg.Storage.Type)
 
 	// Initialize storage and approval queue
 	var approvalQ *approval.Queue
@@ -76,10 +76,10 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to initialize storage: %v", err)
 		}
-		log.Printf("Using SQLite storage: %s", cfg.Storage.Path)
+		log.Infof("Using SQLite storage: %s", cfg.Storage.Path)
 		approvalQ = approval.NewPersistentQueue(5*time.Minute, store)
 	} else {
-		log.Printf("Using in-memory storage (approvals will not persist across restarts)")
+		log.Info("Using in-memory storage (approvals will not persist across restarts)")
 		approvalQ = approval.NewQueue(5 * time.Minute)
 	}
 
@@ -143,7 +143,7 @@ func main() {
 	proxyServer := proxy.NewProxyServer(cfg)
 	go func() {
 		if err := proxyServer.ListenAndServe(cfg.ProxyListen); err != nil {
-			log.Printf("Forward proxy error: %v", err)
+			log.Errorf("Forward proxy error: %v", err)
 		}
 	}()
 
@@ -156,31 +156,31 @@ func main() {
 		}
 	}()
 
-	log.Printf("Server started on %s", cfg.Listen)
-	log.Printf("Forward proxy started on %s", cfg.ProxyListen)
-	log.Printf("Dashboard: http://localhost%s/dashboard/", cfg.Listen)
+	log.Infof("Server started on %s", cfg.Listen)
+	log.Infof("Forward proxy started on %s", cfg.ProxyListen)
+	log.Infof("Dashboard: http://localhost%s/dashboard/", cfg.Listen)
 
 	<-ctx.Done()
-	log.Println("Shutting down gracefully...")
+	log.Info("Shutting down gracefully...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := proxyServer.Close(); err != nil {
-		log.Printf("Forward proxy shutdown error: %v", err)
+		log.Errorf("Forward proxy shutdown error: %v", err)
 	}
 
 	if store != nil {
 		if err := store.Close(); err != nil {
-			log.Printf("Storage shutdown error: %v", err)
+			log.Errorf("Storage shutdown error: %v", err)
 		}
 	}
 
 	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
-		log.Printf("Shutdown error: %v", err)
+		log.Errorf("Shutdown error: %v", err)
 	}
 
-	log.Println("Goodbye!")
+	log.Info("Goodbye!")
 }
 
 // loadWebhooks loads webhook configurations from config.
