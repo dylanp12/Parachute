@@ -3,10 +3,10 @@ module github.com/parachute-security/parachute
 go 1.25.0
 
 require (
-	github.com/gofiber/contrib/v3 v3.0.0-rc.2
+	github.com/fasthttp/websocket v1.5.12
+	github.com/gofiber/contrib/v3/websocket v1.0.0-rc.1
 	github.com/gofiber/fiber/v3 v3.0.0-rc.3
 	github.com/google/uuid v1.6.0
-	github.com/gorilla/websocket v1.5.3
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.29.0
 )
@@ -23,6 +23,7 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/savsgio/gotils v0.0.0-20250924091648-bce9a52d7761 // indirect
 	github.com/tinylib/msgp v1.5.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.68.0 // indirect

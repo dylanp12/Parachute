@@ -12,7 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/contrib/v3/websocket"
+	fasthttpwebsocket "github.com/fasthttp/websocket"
+	fiberwebsocket "github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/parachute-security/parachute/internal/approval"
@@ -60,7 +61,7 @@ func New(cfg *config.Config, approvalQ *approval.Queue, notifier *approval.Notif
 func (p *Proxy) Handler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Check for WebSocket upgrade request - delegate to WebSocket handler
-		if websocket.IsWebSocketUpgrade(c) {
+		if fiberwebsocket.IsWebSocketUpgrade(c) {
 			return p.handleWebSocket(c)
 		}
 
@@ -220,7 +221,7 @@ func (p *Proxy) handleStreaming(c fiber.Ctx, body []byte) error {
 // WebSocketHandler returns a Fiber handler for WebSocket upgrade requests
 // This should be registered with the websocket.New() middleware
 func (p *Proxy) WebSocketHandler() fiber.Handler {
-	return websocket.New(func(c *websocket.Conn) {
+	return fiberwebsocket.New(func(c *fiberwebsocket.Conn) {
 		defer c.Close()
 
 		// Get the path from locals (set before upgrade)
@@ -237,7 +238,7 @@ func (p *Proxy) WebSocketHandler() fiber.Handler {
 		log.Infof("[WEBSOCKET] Connecting to upstream: %s", upstreamURL)
 
 		// Connect to upstream WebSocket using gorilla websocket dialer
-		dialer := websocket.Dialer{
+		dialer := fasthttpwebsocket.Dialer{
 			HandshakeTimeout: 30 * time.Second,
 		}
 
@@ -260,7 +261,7 @@ func (p *Proxy) WebSocketHandler() fiber.Handler {
 			for {
 				messageType, message, err := c.ReadMessage()
 				if err != nil {
-					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					if !fasthttpwebsocket.IsCloseError(err, fasthttpwebsocket.CloseGoingAway, fasthttpwebsocket.CloseNormalClosure) {
 						log.Errorf("[WEBSOCKET] Client read error: %v", err)
 					}
 					upstreamConn.Close()
@@ -279,7 +280,7 @@ func (p *Proxy) WebSocketHandler() fiber.Handler {
 			for {
 				messageType, message, err := upstreamConn.ReadMessage()
 				if err != nil {
-					if !websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+					if !fasthttpwebsocket.IsCloseError(err, fasthttpwebsocket.CloseGoingAway, fasthttpwebsocket.CloseNormalClosure) {
 						log.Errorf("[WEBSOCKET] Upstream read error: %v", err)
 					}
 					c.Close()
