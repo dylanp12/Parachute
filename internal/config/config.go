@@ -29,10 +29,11 @@ type StorageConfig struct {
 
 // AuthConfig holds authentication settings
 type AuthConfig struct {
-	Username    string   `yaml:"username"`
-	PasswordEnv string   `yaml:"password_env"` // Environment variable name for password
-	Token       string   `yaml:"token"`        // Bearer token (optional)
-	AllowedIPs  []string `yaml:"allowed_ips"`  // IP whitelist
+	Username      string   `yaml:"username"`
+	PasswordEnv   string   `yaml:"password_env"`   // Environment variable name for password
+	Token         string   `yaml:"token"`          // Bearer token (optional)
+	AllowedIPs    []string `yaml:"allowed_ips"`    // IP whitelist
+	AllowInsecure bool     `yaml:"allow_insecure"` // Allow running without auth (DANGEROUS - dev only)
 }
 
 // Password retrieves the password from environment variable

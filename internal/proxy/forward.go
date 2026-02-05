@@ -4,19 +4,26 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/log"
 	"github.com/parachute-security/parachute/internal/config"
 	"github.com/parachute-security/parachute/internal/egress"
 )
 
 // ForwardProxy handles outbound requests from the agent container
-// acting as an HTTP/HTTPS forward proxy with domain filtering
+// acting as an HTTP/HTTPS forward proxy with domain filtering.
+//
+// SECURITY NOTE: PII Detection Limitations
+// - HTTP requests: Full content inspection (PII patterns checked)
+// - HTTPS CONNECT: Only domain filtering, NO content inspection
+//   HTTPS tunnels are end-to-end encrypted; we cannot inspect the payload
+//   without TLS interception (MITM), which is not implemented.
+//   See docs/pii-detection.md for details.
 type ForwardProxy struct {
 	egress  *egress.Filter
 	cfg     *config.Config
@@ -44,7 +51,7 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 		// Check if domain is allowed
 		result := fp.egress.CheckURL(targetURL)
 		if !result.Allowed {
-			log.Printf("[EGRESS:BLOCKED] Domain not allowed: %s (reason: %s)", targetURL, result.Reason)
+			log.Warnf("[EGRESS:BLOCKED] Domain not allowed: %s (reason: %s)", targetURL, result.Reason)
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error":  "egress blocked",
 				"reason": result.Reason,
@@ -57,7 +64,7 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 		if len(body) > 0 {
 			piiResult := fp.egress.CheckContent(string(body))
 			if !piiResult.Allowed {
-				log.Printf("[EGRESS:BLOCKED] PII detected in outbound request: %s", piiResult.Pattern)
+				log.Warnf("[EGRESS:BLOCKED] PII detected in outbound request: %s", piiResult.Pattern)
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":   "egress blocked",
 					"reason":  piiResult.Reason,
@@ -66,7 +73,7 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 			}
 		}
 
-		log.Printf("[EGRESS:ALLOWED] %s %s", c.Method(), targetURL)
+		log.Infof("[EGRESS:ALLOWED] %s %s", c.Method(), targetURL)
 
 		// Create upstream request
 		req, err := http.NewRequestWithContext(c.Context(), c.Method(), targetURL, strings.NewReader(string(body)))
@@ -91,7 +98,7 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 		client := &http.Client{Timeout: fp.timeout}
 		resp, err := client.Do(req)
 		if err != nil {
-			log.Printf("[EGRESS:ERROR] Request failed: %v", err)
+			log.Errorf("[EGRESS:ERROR] Request failed: %v", err)
 			return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "upstream request failed"})
 		}
 		defer resp.Body.Close()
@@ -115,8 +122,16 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 	}
 }
 
-// ConnectHandler handles HTTPS CONNECT tunneling requests
-// This must be called from a raw TCP handler, not Fiber
+// HandleConnect handles HTTPS CONNECT tunneling requests.
+// This must be called from a raw TCP handler, not Fiber.
+//
+// IMPORTANT: This creates an opaque tunnel - we can only filter by domain,
+// not by content. The TLS handshake and all subsequent traffic between client
+// and target is encrypted end-to-end. PII detection is NOT possible here
+// without implementing TLS interception (MITM proxy), which would require:
+// 1. Generating certificates on-the-fly for each domain
+// 2. Installing a CA certificate in the agent container
+// 3. Handling certificate pinning failures
 func (fp *ForwardProxy) HandleConnect(clientConn net.Conn, host string) {
 	defer clientConn.Close()
 
@@ -129,17 +144,17 @@ func (fp *ForwardProxy) HandleConnect(clientConn net.Conn, host string) {
 	// Check if domain is allowed
 	result := fp.egress.CheckURL("https://" + hostname)
 	if !result.Allowed {
-		log.Printf("[EGRESS:BLOCKED] CONNECT to %s denied (reason: %s)", host, result.Reason)
+		log.Warnf("[EGRESS:BLOCKED] CONNECT to %s denied (reason: %s)", host, result.Reason)
 		clientConn.Write([]byte("HTTP/1.1 403 Forbidden\r\n\r\nDomain not allowed\n"))
 		return
 	}
 
-	log.Printf("[EGRESS:ALLOWED] CONNECT tunnel to %s", host)
+	log.Infof("[EGRESS:ALLOWED] CONNECT tunnel to %s", host)
 
 	// Connect to target
 	targetConn, err := fp.dialer.Dial("tcp", host)
 	if err != nil {
-		log.Printf("[EGRESS:ERROR] Failed to connect to %s: %v", host, err)
+		log.Errorf("[EGRESS:ERROR] Failed to connect to %s: %v", host, err)
 		clientConn.Write([]byte("HTTP/1.1 502 Bad Gateway\r\n\r\nConnection failed\n"))
 		return
 	}
@@ -184,7 +199,7 @@ func (ps *ProxyServer) ListenAndServe(addr string) error {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
 
-	log.Printf("[PROXY] Forward proxy listening on %s", addr)
+	log.Infof("[PROXY] Forward proxy listening on %s", addr)
 
 	for {
 		conn, err := ps.listener.Accept()
@@ -192,7 +207,7 @@ func (ps *ProxyServer) ListenAndServe(addr string) error {
 			if strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
-			log.Printf("[PROXY:ERROR] Accept failed: %v", err)
+			log.Errorf("[PROXY:ERROR] Accept failed: %v", err)
 			continue
 		}
 		go ps.handleConnection(conn)
@@ -216,7 +231,7 @@ func (ps *ProxyServer) handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 	req, err := http.ReadRequest(reader)
 	if err != nil {
-		log.Printf("[PROXY:ERROR] Failed to read request: %v", err)
+		log.Errorf("[PROXY:ERROR] Failed to read request: %v", err)
 		return
 	}
 
@@ -241,7 +256,7 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 	// Check if domain is allowed
 	result := ps.fp.egress.CheckURL(targetURL)
 	if !result.Allowed {
-		log.Printf("[EGRESS:BLOCKED] HTTP to %s denied (reason: %s)", targetURL, result.Reason)
+		log.Warnf("[EGRESS:BLOCKED] HTTP to %s denied (reason: %s)", targetURL, result.Reason)
 		resp := &http.Response{
 			StatusCode: 403,
 			Status:     "403 Forbidden",
@@ -262,7 +277,7 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 		if err == nil && len(bodyBytes) > 0 {
 			piiResult := ps.fp.egress.CheckContent(string(bodyBytes))
 			if !piiResult.Allowed {
-				log.Printf("[EGRESS:BLOCKED] PII in outbound request: %s", piiResult.Pattern)
+				log.Warnf("[EGRESS:BLOCKED] PII in outbound request: %s", piiResult.Pattern)
 				resp := &http.Response{
 					StatusCode: 403,
 					Status:     "403 Forbidden",
@@ -279,13 +294,13 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 		}
 	}
 
-	log.Printf("[EGRESS:ALLOWED] %s %s", req.Method, targetURL)
+	log.Infof("[EGRESS:ALLOWED] %s %s", req.Method, targetURL)
 
 	// Forward request
 	client := &http.Client{Timeout: ps.fp.timeout}
 	proxyReq, err := http.NewRequest(req.Method, targetURL, req.Body)
 	if err != nil {
-		log.Printf("[EGRESS:ERROR] Failed to create request: %v", err)
+		log.Errorf("[EGRESS:ERROR] Failed to create request: %v", err)
 		return
 	}
 
@@ -305,7 +320,7 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 
 	resp, err := client.Do(proxyReq)
 	if err != nil {
-		log.Printf("[EGRESS:ERROR] Request failed: %v", err)
+		log.Errorf("[EGRESS:ERROR] Request failed: %v", err)
 		errResp := &http.Response{
 			StatusCode: 502,
 			Status:     "502 Bad Gateway",
