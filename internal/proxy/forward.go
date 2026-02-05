@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/parachute-security/parachute/internal/config"
 	"github.com/parachute-security/parachute/internal/egress"
+	"github.com/parachute-security/parachute/internal/metrics"
 )
 
 // ForwardProxy handles outbound requests from the agent container
@@ -52,6 +53,7 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 		result := fp.egress.CheckURL(targetURL)
 		if !result.Allowed {
 			log.Warnf("[EGRESS:BLOCKED] Domain not allowed: %s (reason: %s)", targetURL, result.Reason)
+			metrics.Get().EgressBlocked.Add(1)
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error":  "egress blocked",
 				"reason": result.Reason,
@@ -65,6 +67,8 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 			piiResult := fp.egress.CheckContent(string(body))
 			if !piiResult.Allowed {
 				log.Warnf("[EGRESS:BLOCKED] PII detected in outbound request: %s", piiResult.Pattern)
+				metrics.Get().PIIDetected.Add(1)
+				metrics.Get().EgressBlocked.Add(1)
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":   "egress blocked",
 					"reason":  piiResult.Reason,
@@ -74,6 +78,7 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 		}
 
 		log.Infof("[EGRESS:ALLOWED] %s %s", c.Method(), targetURL)
+		metrics.Get().EgressAllowed.Add(1)
 
 		// Create upstream request
 		req, err := http.NewRequestWithContext(c.Context(), c.Method(), targetURL, strings.NewReader(string(body)))
@@ -145,11 +150,13 @@ func (fp *ForwardProxy) HandleConnect(clientConn net.Conn, host string) {
 	result := fp.egress.CheckURL("https://" + hostname)
 	if !result.Allowed {
 		log.Warnf("[EGRESS:BLOCKED] CONNECT to %s denied (reason: %s)", host, result.Reason)
+		metrics.Get().EgressBlocked.Add(1)
 		clientConn.Write([]byte("HTTP/1.1 403 Forbidden\r\n\r\nDomain not allowed\n"))
 		return
 	}
 
 	log.Infof("[EGRESS:ALLOWED] CONNECT tunnel to %s", host)
+	metrics.Get().EgressAllowed.Add(1)
 
 	// Connect to target
 	targetConn, err := fp.dialer.Dial("tcp", host)
@@ -257,6 +264,7 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 	result := ps.fp.egress.CheckURL(targetURL)
 	if !result.Allowed {
 		log.Warnf("[EGRESS:BLOCKED] HTTP to %s denied (reason: %s)", targetURL, result.Reason)
+		metrics.Get().EgressBlocked.Add(1)
 		resp := &http.Response{
 			StatusCode: 403,
 			Status:     "403 Forbidden",
@@ -278,6 +286,8 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 			piiResult := ps.fp.egress.CheckContent(string(bodyBytes))
 			if !piiResult.Allowed {
 				log.Warnf("[EGRESS:BLOCKED] PII in outbound request: %s", piiResult.Pattern)
+				metrics.Get().PIIDetected.Add(1)
+				metrics.Get().EgressBlocked.Add(1)
 				resp := &http.Response{
 					StatusCode: 403,
 					Status:     "403 Forbidden",
@@ -295,6 +305,7 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 	}
 
 	log.Infof("[EGRESS:ALLOWED] %s %s", req.Method, targetURL)
+	metrics.Get().EgressAllowed.Add(1)
 
 	// Forward request
 	client := &http.Client{Timeout: ps.fp.timeout}

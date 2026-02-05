@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/parachute-security/parachute/internal/audit"
 	"github.com/parachute-security/parachute/internal/config"
+	"github.com/parachute-security/parachute/internal/metrics"
 )
 
 // CorrelationID creates middleware that adds a correlation ID to each request
@@ -65,6 +66,7 @@ func Auth(cfg *config.AuthConfig) fiber.Handler {
 				token := strings.TrimPrefix(authHeader, "Bearer ")
 				if constantTimeEqual(token, cfg.Token) {
 					audit.LogIngressAllow(correlationID, clientIP, c.Method(), c.Path())
+					metrics.Get().AuthSuccess.Add(1)
 					return c.Next()
 				}
 			}
@@ -82,6 +84,7 @@ func Auth(cfg *config.AuthConfig) fiber.Handler {
 						passwordMatch := constantTimeEqual(parts[1], cfg.Password())
 						if usernameMatch && passwordMatch {
 							audit.LogIngressAllow(correlationID, clientIP, c.Method(), c.Path())
+							metrics.Get().AuthSuccess.Add(1)
 							return c.Next()
 						}
 					}
@@ -89,6 +92,7 @@ func Auth(cfg *config.AuthConfig) fiber.Handler {
 			}
 
 			audit.LogAuthFailure(correlationID, clientIP, "invalid credentials")
+			metrics.Get().AuthFailure.Add(1)
 			c.Set("WWW-Authenticate", `Basic realm="Parachute"`)
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "authentication required",
@@ -168,6 +172,7 @@ func (rl *RateLimiter) Handler() fiber.Handler {
 		if entry.count >= rl.rate {
 			rl.mu.Unlock()
 			audit.LogRateLimited(correlationID, clientIP)
+			metrics.Get().RequestsRateLimited.Add(1)
 			c.Set("Retry-After", "60")
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
 				"error": "rate limit exceeded",
