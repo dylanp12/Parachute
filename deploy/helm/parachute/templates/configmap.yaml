@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "parachute.fullname" . }}-config
+  labels:
+    {{- include "parachute.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    auth:
+      username: {{ .Values.config.auth.username | quote }}
+      password_env: "PARACHUTE_PASSWORD"
+
+    risk_policy:
+      block_commands:
+        {{- range .Values.config.riskPolicy.blockCommands }}
+        - {{ . | quote }}
+        {{- end }}
+      require_approval:
+        {{- range .Values.config.riskPolicy.requireApproval }}
+        - {{ . | quote }}
+        {{- end }}
+
+    egress:
+      allow_domains:
+        {{- range .Values.config.egress.allowDomains }}
+        - {{ . | quote }}
+        {{- end }}
+      pii_patterns:
+        {{- range .Values.config.egress.piiPatterns }}
+        - {{ . | quote }}
+        {{- end }}
+
+    storage:
+      type: {{ .Values.config.storage.type | quote }}
+      path: {{ .Values.config.storage.path | quote }}
+
+    upstream: "http://localhost:3000"
+    listen: ":8080"
+    proxy_listen: ":8888"

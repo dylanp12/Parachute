@@ -1,0 +1,76 @@
+# Default values for Parachute Helm chart
+
+replicaCount: 1
+
+image:
+  repository: parachutesecurity/parachute
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Parachute configuration (rendered as parachute.yaml ConfigMap)
+config:
+  auth:
+    username: admin
+    passwordSecret: parachute-auth  # K8s secret name containing password
+  riskPolicy:
+    blockCommands:
+      - "rm -rf /"
+      - "rm -rf ~"
+      - ":(){ :|:& };:"
+      - "mkfs\\."
+    requireApproval:
+      - "\\brm\\b"
+      - "\\bsudo\\b"
+      - "\\bgit\\b.*(push|force)"
+  egress:
+    allowDomains:
+      - "api.anthropic.com"
+      - "api.openai.com"
+      - "github.com"
+      - "*.githubusercontent.com"
+    piiPatterns:
+      - "AKIA[0-9A-Z]{16}"
+      - "-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"
+  storage:
+    type: memory
+    path: /var/lib/parachute/parachute.db
+
+service:
+  type: ClusterIP
+  port: 8080
+  proxyPort: 8888
+
+# Sidecar injector configuration
+sidecarInjector:
+  enabled: false
+  namespaceSelector:
+    matchLabels:
+      parachute-injection: enabled
+
+# Network policy to enforce egress through Parachute
+networkPolicy:
+  enabled: true
+
+# Horizontal Pod Autoscaler
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilization: 80
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 64Mi
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

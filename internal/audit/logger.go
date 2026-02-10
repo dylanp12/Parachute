@@ -27,6 +27,15 @@ const (
 	EventPIIScrub       EventType = "pii_scrub"
 	EventRateLimit      EventType = "rate_limit"
 	EventAuthFail       EventType = "auth_fail"
+
+	// MCP events
+	EventMCPToolCall      EventType = "mcp_tool_call"
+	EventMCPToolBlock     EventType = "mcp_tool_block"
+	EventMCPToolPending   EventType = "mcp_tool_pending"
+	EventMCPToolApprove   EventType = "mcp_tool_approve"
+	EventMCPToolDeny      EventType = "mcp_tool_deny"
+	EventMCPResourceRead  EventType = "mcp_resource_read"
+	EventMCPResourceBlock EventType = "mcp_resource_block"
 )
 
 // Event represents a structured audit log event

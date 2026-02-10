@@ -7,32 +7,24 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/config"
 )
 
 // Client manages connection to cloud relay server
 type Client struct {
 	cfg       *config.RelayConfig
-	approvalQ *approval.Queue
+	handler   ApprovalHandler
 	mu        sync.RWMutex
 	connected bool
 	stopCh    chan struct{}
 }
 
-// Message represents a relay protocol message
-type Message struct {
-	Type    string         `json:"type"`
-	ID      string         `json:"id,omitempty"`
-	Payload map[string]any `json:"payload,omitempty"`
-}
-
 // New creates a new relay client
-func New(cfg *config.RelayConfig, approvalQ *approval.Queue) *Client {
+func New(cfg *config.RelayConfig, handler ApprovalHandler) *Client {
 	return &Client{
-		cfg:       cfg,
-		approvalQ: approvalQ,
-		stopCh:    make(chan struct{}),
+		cfg:     cfg,
+		handler: handler,
+		stopCh:  make(chan struct{}),
 	}
 }
 
@@ -73,16 +65,17 @@ func (c *Client) IsConnected() bool {
 }
 
 func (c *Client) connect(ctx context.Context) error {
-	// Note: Install gorilla/websocket for production WebSocket client
-	// go get github.com/gorilla/websocket
+	// Production implementation requires gorilla/websocket:
+	//   go get github.com/gorilla/websocket
 	//
-	// Example:
-	// conn, _, err := websocket.DefaultDialer.DialContext(ctx, c.cfg.ServerURL, nil)
-	// if err != nil { return err }
-	// defer conn.Close()
-	// for { _, msg, err := conn.ReadMessage(); c.handleMessage(msg) }
+	// The connection flow:
+	// 1. Dial wss://relay.parachute.dev/ws
+	// 2. Send MsgTypeAuthenticate with API key
+	// 3. Enter read loop: handle approve/deny/sync messages
+	// 4. Send MsgTypeHeartbeat every 30s
+	// 5. Forward local pending commands via MsgTypePending
 
-	log.Info("[RELAY] WebSocket client placeholder - install gorilla/websocket for production")
+	log.Info("[RELAY] WebSocket client placeholder - requires Parachute Pro license")
 
 	select {
 	case <-ctx.Done():
@@ -95,23 +88,25 @@ func (c *Client) connect(ctx context.Context) error {
 }
 
 func (c *Client) handleMessage(data []byte) {
-	var msg Message
+	var msg RelayMessage
 	if err := json.Unmarshal(data, &msg); err != nil {
 		log.Warnf("[RELAY] Invalid message: %v", err)
 		return
 	}
 
 	switch msg.Type {
-	case "approve":
+	case MsgTypeApprove:
 		if msg.ID != "" {
-			c.approvalQ.Approve(msg.ID)
+			c.handler.Approve(msg.ID)
 			log.Infof("[RELAY] Approved via relay: %s", msg.ID)
 		}
-	case "deny":
+	case MsgTypeDeny:
 		if msg.ID != "" {
-			c.approvalQ.Deny(msg.ID)
+			c.handler.Deny(msg.ID)
 			log.Infof("[RELAY] Denied via relay: %s", msg.ID)
 		}
+	case MsgTypeSync:
+		log.Info("[RELAY] Sync requested by relay server")
 	default:
 		log.Warnf("[RELAY] Unknown message type: %s", msg.Type)
 	}

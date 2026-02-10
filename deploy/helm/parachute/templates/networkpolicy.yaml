@@ -1,0 +1,33 @@
+{{- if .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "parachute.fullname" . }}-agent-egress
+  labels:
+    {{- include "parachute.labels" . | nindent 4 }}
+spec:
+  # Apply to pods labeled with parachute-protected=true
+  podSelector:
+    matchLabels:
+      parachute-protected: "true"
+  policyTypes:
+    - Egress
+  egress:
+    # Only allow egress to Parachute proxy
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "parachute.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.proxyPort }}
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

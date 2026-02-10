@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parachute - The Seatbelt for Your AI Agent</title>
+    <meta name="description" content="Open-source security sidecar for autonomous AI agents. Intercept, inspect, and control all traffic entering and leaving your agent container.">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">Parachute</div>
+            <div class="nav-links">
+                <a href="https://github.com/parachute-security/parachute">GitHub</a>
+                <a href="https://github.com/parachute-security/parachute/tree/main/docs">Docs</a>
+                <a href="#waitlist" class="btn-primary">Join Waitlist</a>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <h1>The Seatbelt for Your AI Agent</h1>
+            <p class="hero-subtitle">
+                Open-source security sidecar that intercepts all traffic entering and leaving
+                your AI agent container. Authentication, egress control, command interception,
+                PII detection, and human-in-the-loop approval — in one drop-in proxy.
+            </p>
+            <div class="hero-actions">
+                <div class="install-box">
+                    <code>docker pull parachutesecurity/parachute:latest</code>
+                </div>
+                <a href="https://github.com/parachute-security/parachute" class="btn-secondary">View on GitHub</a>
+            </div>
+        </section>
+
+        <section class="architecture">
+            <h2>How It Works</h2>
+            <div class="arch-diagram">
+                <pre>
+Internet ──► Parachute (:8080 reverse proxy) ──► Agent Container (isolated)
+                  │
+           Forward Proxy (:8888) ◄── Agent egress traffic
+                  │
+            Dashboard (approve/deny commands)
+                </pre>
+            </div>
+            <p class="arch-desc">
+                Parachute runs as a sidecar container. Your agent container has no direct internet access —
+                all traffic flows through Parachute for inspection and control.
+            </p>
+        </section>
+
+        <section class="features">
+            <h2>Security Features</h2>
+            <div class="feature-grid">
+                <div class="feature">
+                    <h3>Egress Control</h3>
+                    <p>Domain whitelist with wildcard support. Only allow your agent to reach approved APIs and services.</p>
+                </div>
+                <div class="feature">
+                    <h3>Command Interception</h3>
+                    <p>Regex-based policy engine blocks dangerous commands and fork bombs. Shell wrapper unwrapping defeats evasion.</p>
+                </div>
+                <div class="feature">
+                    <h3>Human-in-the-Loop</h3>
+                    <p>Risky commands pause for human approval via web dashboard. Configurable timeout with persistent queue.</p>
+                </div>
+                <div class="feature">
+                    <h3>PII Detection</h3>
+                    <p>Blocks exfiltration of credit cards, AWS keys, private keys, and GitHub tokens in outbound traffic.</p>
+                </div>
+                <div class="feature">
+                    <h3>MCP Gateway</h3>
+                    <p>Native Model Context Protocol support. Inspect, policy-gate, and audit MCP tool calls between clients and servers.</p>
+                </div>
+                <div class="feature">
+                    <h3>Audit Logging</h3>
+                    <p>Structured JSON audit trail with correlation IDs. Prometheus metrics for monitoring. Full observability.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="quickstart">
+            <h2>Try It in 30 Seconds</h2>
+            <div class="code-block">
+                <pre><code># Clone and run the interactive demo
+git clone https://github.com/parachute-security/parachute.git
+cd parachute
+docker compose -f docker-compose.demo.yml up --build
+
+# Visit http://localhost:8080/dashboard/
+# Username: admin | Password: demo</code></pre>
+            </div>
+            <p>The demo includes an agent simulator that generates security events — blocked commands,
+               approval requests, egress violations, and PII detection — so you can see every feature in action.</p>
+        </section>
+
+        <section class="frameworks">
+            <h2>Framework Agnostic</h2>
+            <p>Works with any AI agent framework. Parachute operates at the network layer, so it protects
+               your agent regardless of the framework.</p>
+            <div class="framework-list">
+                <span>Claude Code</span>
+                <span>OpenAI Codex</span>
+                <span>LangChain</span>
+                <span>CrewAI</span>
+                <span>AutoGen</span>
+                <span>Custom Agents</span>
+            </div>
+        </section>
+
+        <section class="waitlist" id="waitlist">
+            <h2>Parachute Pro</h2>
+            <p>Coming soon: cloud relay for mobile HITL approvals, fleet management dashboard,
+               SIEM integration, and EU AI Act compliance reporting.</p>
+            <p>Join the waitlist to get early access:</p>
+            <form class="waitlist-form" action="https://formspree.io/f/parachute-waitlist" method="POST">
+                <input type="email" name="email" placeholder="your@email.com" required>
+                <button type="submit" class="btn-primary">Join Waitlist</button>
+            </form>
+        </section>
+    </main>
+
+    <footer>
+        <p>Parachute is open source under the MIT License.</p>
+        <p>
+            <a href="https://github.com/parachute-security/parachute">GitHub</a> &middot;
+            <a href="https://github.com/parachute-security/parachute/tree/main/docs">Documentation</a> &middot;
+            <a href="https://github.com/parachute-security/parachute/blob/main/SECURITY.md">Security Policy</a>
+        </p>
+    </footer>
+</body>
+</html>

@@ -59,6 +59,38 @@ relay:
   # server_url: "wss://relay.parachute.io/ws"
   # api_key: "your-api-key"
 
+# MCP (Model Context Protocol) proxy configuration
+# mcp:
+#   enabled: false
+#   listen: ":9090"                      # MCP proxy listen address
+#   default_policy:
+#     require_approval:
+#       - "execute_bash"
+#       - "run_command"
+#     block_tools:
+#       - "dangerous_tool"
+#   servers:
+#     "filesystem-server":
+#       block_resources:
+#         - "file:///etc/passwd"
+#         - "file:///etc/shadow"
+#       block_tools:
+#         - "write_file"
+#   upstreams:
+#     - name: "filesystem-server"
+#       url: "http://localhost:3001"
+
+# Webhook notifications for pending approvals
+# webhooks:
+#   - url: "https://hooks.slack.com/services/..."
+#     method: "POST"
+#   - url: "https://discord.com/api/webhooks/..."
+#     method: "POST"
+
+# License key for Parachute Pro features (cloud relay, fleet dashboard, etc.)
+# license:
+#   key_env: "PARACHUTE_LICENSE_KEY"     # Read from environment variable
+
 # Storage configuration
 storage:
   type: "memory"  # Options: "memory" (volatile) or "sqlite" (persistent)

@@ -16,9 +16,58 @@ type Config struct {
 	Egress      EgressConfig     `yaml:"egress"`
 	Relay       RelayConfig      `yaml:"relay"`
 	Storage     StorageConfig    `yaml:"storage"`
+	MCP         MCPConfig        `yaml:"mcp"`
+	Webhooks    []WebhookConfig  `yaml:"webhooks"`
+	License     LicenseConfig    `yaml:"license"`
 	Upstream    string           `yaml:"upstream"`
 	Listen      string           `yaml:"listen"`
 	ProxyListen string           `yaml:"proxy_listen"` // Forward proxy listen address for agent egress
+}
+
+// MCPConfig defines Model Context Protocol proxy settings
+type MCPConfig struct {
+	Enabled       bool                       `yaml:"enabled"`
+	Listen        string                     `yaml:"listen"`         // MCP proxy listen address (e.g. ":9090")
+	DefaultPolicy MCPServerPolicy            `yaml:"default_policy"`
+	Servers       map[string]MCPServerPolicy `yaml:"servers"`
+	Upstreams     []MCPUpstreamConfig        `yaml:"upstreams"`
+}
+
+// MCPServerPolicy defines per-server MCP policy rules
+type MCPServerPolicy struct {
+	BlockTools      []string `yaml:"block_tools"`
+	RequireApproval []string `yaml:"require_approval"`
+	AllowTools      []string `yaml:"allow_tools"`
+	BlockResources  []string `yaml:"block_resources"`
+}
+
+// MCPUpstreamConfig defines an upstream MCP server
+type MCPUpstreamConfig struct {
+	Name string `yaml:"name"`
+	URL  string `yaml:"url"`
+}
+
+// WebhookConfig defines a notification endpoint
+type WebhookConfig struct {
+	URL     string            `yaml:"url"`
+	Method  string            `yaml:"method"`
+	Headers map[string]string `yaml:"headers"`
+}
+
+// LicenseConfig defines license key settings for Parachute Pro features
+type LicenseConfig struct {
+	Key    string `yaml:"key"`
+	KeyEnv string `yaml:"key_env"` // Environment variable for license key
+}
+
+// LicenseKey retrieves the license key from config or environment variable
+func (l *LicenseConfig) LicenseKey() string {
+	if l.KeyEnv != "" {
+		if key := os.Getenv(l.KeyEnv); key != "" {
+			return key
+		}
+	}
+	return l.Key
 }
 
 // StorageConfig defines persistent storage settings
