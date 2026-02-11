@@ -18,6 +18,8 @@ import (
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/config"
 	"github.com/parachute-security/parachute/internal/dashboard"
+	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/parachute-security/parachute/internal/mcp"
 	"github.com/parachute-security/parachute/internal/metrics"
 	"github.com/parachute-security/parachute/internal/middleware"
 	"github.com/parachute-security/parachute/internal/proxy"
@@ -133,6 +135,23 @@ func main() {
 	proxyGroup.Use(middleware.Auth(&cfg.Auth))
 	proxyGroup.All("/*", proxyHandler.Handler())
 
+	// MCP proxy (Model Context Protocol gateway)
+	if cfg.MCP.Enabled {
+		cmdInterceptor := interceptor.New(&cfg.RiskPolicy)
+		mcpCfg := &mcp.ProxyConfig{
+			Enabled:       cfg.MCP.Enabled,
+			Listen:        cfg.MCP.Listen,
+			DefaultPolicy: toMCPServerPolicy(cfg.MCP.DefaultPolicy),
+			Servers:       toMCPServerPolicies(cfg.MCP.Servers),
+			Upstreams:     toMCPUpstreams(cfg.MCP.Upstreams),
+		}
+		mcpProxy := mcp.NewProxy(mcpCfg, approvalQ, notifier, cmdInterceptor)
+		mcpGroup := app.Group("/mcp")
+		mcpGroup.Use(middleware.Auth(&cfg.Auth))
+		mcpProxy.RegisterRoutes(mcpGroup)
+		log.Infof("MCP proxy enabled on /mcp")
+	}
+
 	// Cloud relay (Phase 3)
 	if cfg.Relay.Enabled {
 		relayClient := relay.New(&cfg.Relay, approvalQ)
@@ -183,8 +202,47 @@ func main() {
 	log.Info("Goodbye!")
 }
 
-// loadWebhooks loads webhook configurations from config.
-// Currently returns empty list - webhook configuration via config file planned for v1.1.
+// loadWebhooks loads webhook configurations from config
 func loadWebhooks(cfg *config.Config) []approval.WebhookConfig {
-	return []approval.WebhookConfig{}
+	webhooks := make([]approval.WebhookConfig, 0, len(cfg.Webhooks))
+	for _, wh := range cfg.Webhooks {
+		webhooks = append(webhooks, approval.WebhookConfig{
+			URL:     wh.URL,
+			Method:  wh.Method,
+			Headers: wh.Headers,
+		})
+	}
+	return webhooks
+}
+
+// Config type conversion helpers for MCP
+func toMCPServerPolicy(p config.MCPServerPolicy) mcp.ServerPolicy {
+	return mcp.ServerPolicy{
+		BlockTools:      p.BlockTools,
+		RequireApproval: p.RequireApproval,
+		AllowTools:      p.AllowTools,
+		BlockResources:  p.BlockResources,
+	}
+}
+
+func toMCPServerPolicies(policies map[string]config.MCPServerPolicy) map[string]mcp.ServerPolicy {
+	if policies == nil {
+		return nil
+	}
+	result := make(map[string]mcp.ServerPolicy, len(policies))
+	for k, v := range policies {
+		result[k] = toMCPServerPolicy(v)
+	}
+	return result
+}
+
+func toMCPUpstreams(upstreams []config.MCPUpstreamConfig) []mcp.ServerConfig {
+	result := make([]mcp.ServerConfig, 0, len(upstreams))
+	for _, u := range upstreams {
+		result = append(result, mcp.ServerConfig{
+			Name: u.Name,
+			URL:  u.URL,
+		})
+	}
+	return result
 }

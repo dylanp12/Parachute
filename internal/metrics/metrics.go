@@ -34,6 +34,13 @@ type Metrics struct {
 	AuthSuccess atomic.Int64
 	AuthFailure atomic.Int64
 
+	// MCP
+	MCPToolCallsTotal    atomic.Int64
+	MCPToolCallsBlocked  atomic.Int64
+	MCPToolCallsApproved atomic.Int64
+	MCPToolCallsAllowed  atomic.Int64
+	MCPResourceReads     atomic.Int64
+
 	// Latency tracking (in microseconds)
 	latencyMu    sync.Mutex
 	latencySum   int64
@@ -127,6 +134,27 @@ func Handler() fiber.Handler {
 		sb.WriteString("\n# HELP parachute_auth_failure Total failed authentications\n")
 		sb.WriteString("# TYPE parachute_auth_failure counter\n")
 		sb.WriteString(fmt.Sprintf("parachute_auth_failure %d\n", m.AuthFailure.Load()))
+
+		// MCP metrics
+		sb.WriteString("\n# HELP parachute_mcp_tool_calls_total Total MCP tool calls\n")
+		sb.WriteString("# TYPE parachute_mcp_tool_calls_total counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_mcp_tool_calls_total %d\n", m.MCPToolCallsTotal.Load()))
+
+		sb.WriteString("\n# HELP parachute_mcp_tool_calls_blocked Total MCP tool calls blocked\n")
+		sb.WriteString("# TYPE parachute_mcp_tool_calls_blocked counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_mcp_tool_calls_blocked %d\n", m.MCPToolCallsBlocked.Load()))
+
+		sb.WriteString("\n# HELP parachute_mcp_tool_calls_approved Total MCP tool calls approved via HITL\n")
+		sb.WriteString("# TYPE parachute_mcp_tool_calls_approved counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_mcp_tool_calls_approved %d\n", m.MCPToolCallsApproved.Load()))
+
+		sb.WriteString("\n# HELP parachute_mcp_tool_calls_allowed Total MCP tool calls allowed\n")
+		sb.WriteString("# TYPE parachute_mcp_tool_calls_allowed counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_mcp_tool_calls_allowed %d\n", m.MCPToolCallsAllowed.Load()))
+
+		sb.WriteString("\n# HELP parachute_mcp_resource_reads Total MCP resource reads\n")
+		sb.WriteString("# TYPE parachute_mcp_resource_reads counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_mcp_resource_reads %d\n", m.MCPResourceReads.Load()))
 
 		// Latency metrics
 		m.latencyMu.Lock()

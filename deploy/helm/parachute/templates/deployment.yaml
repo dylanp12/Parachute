@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "parachute.fullname" . }}
+  labels:
+    {{- include "parachute.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "parachute.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "parachute.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "parachute.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: parachute
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: proxy
+              containerPort: 8888
+              protocol: TCP
+          env:
+            - name: PARACHUTE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.auth.passwordSecret }}
+                  key: password
+          volumeMounts:
+            - name: config
+              mountPath: /etc/parachute
+              readOnly: true
+            {{- if eq .Values.config.storage.type "sqlite" }}
+            - name: data
+              mountPath: /var/lib/parachute
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "parachute.fullname" . }}-config
+        {{- if eq .Values.config.storage.type "sqlite" }}
+        - name: data
+          emptyDir: {}
+        {{- end }}

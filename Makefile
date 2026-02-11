@@ -1,6 +1,6 @@
 # Parachute Makefile
 
-.PHONY: all build test test-unit test-integration clean docker docker-up docker-down lint fmt help
+.PHONY: all build build-verify test test-unit test-integration clean docker docker-up docker-down docker-demo demo demo-down lint fmt helm-lint help
 
 # Build variables
 BINARY_NAME=parachute
@@ -22,6 +22,11 @@ all: build
 
 build: ## Build the binary
 	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/parachute
+
+build-verify: ## Build the audit log verification tool
+	$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/parachute-verify ./cmd/parachute-verify
+
+build-all: build build-verify ## Build all binaries
 
 build-linux: ## Build for Linux
 	GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/parachute
@@ -77,6 +82,29 @@ docker-logs: ## Show Docker Compose logs
 docker-hardened: ## Start with hardened profile
 	docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
 
+## Demo targets
+
+demo: ## Start demo environment
+	docker compose -f docker-compose.demo.yml up --build -d
+	@echo "Demo running! Dashboard at http://localhost:8080/dashboard/"
+
+demo-down: ## Stop demo environment
+	docker compose -f docker-compose.demo.yml down -v
+
+demo-logs: ## Show demo logs
+	docker compose -f docker-compose.demo.yml logs -f
+
+## Helm targets
+
+helm-lint: ## Lint Helm chart
+	helm lint deploy/helm/parachute/
+
+helm-template: ## Render Helm templates locally
+	helm template parachute deploy/helm/parachute/
+
+helm-dry-run: ## Dry-run Helm install
+	helm install parachute deploy/helm/parachute/ --dry-run
+
 ## Development targets
 
 run: build ## Run locally
@@ -102,6 +130,7 @@ clean: ## Clean build artifacts
 	rm -rf $(BUILD_DIR)
 	rm -f coverage.out coverage.html
 	cd tests/integration && docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
+	docker compose -f docker-compose.demo.yml down -v 2>/dev/null || true
 
 deps: ## Download dependencies
 	$(GOCMD) mod download

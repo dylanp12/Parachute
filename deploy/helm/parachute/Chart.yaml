@@ -1,0 +1,16 @@
+apiVersion: v2
+name: parachute
+description: Security sidecar for autonomous AI agents
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - ai-security
+  - agent-security
+  - sidecar
+  - proxy
+home: https://github.com/parachute-security/parachute
+sources:
+  - https://github.com/parachute-security/parachute
+maintainers:
+  - name: Parachute Security

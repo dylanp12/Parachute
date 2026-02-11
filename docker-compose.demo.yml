@@ -1,0 +1,57 @@
+# Parachute Demo Environment
+#
+# Run: docker compose -f docker-compose.demo.yml up --build
+# Then visit: http://localhost:8080/dashboard/
+#
+# This demo bundles Parachute with an agent simulator that generates
+# scripted security events: safe commands, blocked commands, HITL approvals,
+# egress violations, and PII detection attempts.
+
+services:
+  parachute:
+    build: .
+    container_name: parachute-demo
+    ports:
+      - "8080:8080"
+      - "8888:8888"
+    volumes:
+      - ./demo/parachute.demo.yaml:/etc/parachute/config.yaml:ro
+    environment:
+      - PARACHUTE_PASSWORD=demo
+    networks:
+      - demo-public
+      - demo-agent
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+
+  echo-server:
+    build: ./demo/echo-server
+    container_name: demo-echo
+    networks:
+      - demo-agent
+
+  agent-simulator:
+    build: ./demo/agent-simulator
+    container_name: demo-simulator
+    environment:
+      - PARACHUTE_URL=http://parachute:8080
+      - PARACHUTE_USER=admin
+      - PARACHUTE_PASSWORD=demo
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+    networks:
+      - demo-agent
+    depends_on:
+      parachute:
+        condition: service_healthy
+
+networks:
+  demo-public:
+    driver: bridge
+  demo-agent:
+    driver: bridge
+    internal: true
