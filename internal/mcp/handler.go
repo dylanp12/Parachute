@@ -1,9 +1,12 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -212,24 +215,27 @@ func (h *Handler) handleResourcesRead(c fiber.Ctx, req *JSONRPCRequest, correlat
 
 // ForwardToServer creates a handler that forwards MCP requests to an upstream server
 func ForwardToServer(upstreamURL string) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		// Forward the original body to upstream
-		agent := fiber.Post(upstreamURL)
-		agent.Body(c.Body())
-		agent.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 30 * time.Second}
 
-		statusCode, body, errs := agent.Bytes()
-		if len(errs) > 0 {
+	return func(c fiber.Ctx) error {
+		req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, upstreamURL, bytes.NewReader(c.Body()))
+		if err != nil {
+			return c.Status(502).JSON(NewErrorResponse(nil, ErrCodeInternal, "failed to create upstream request", nil))
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
+		if err != nil {
 			return c.Status(502).JSON(NewErrorResponse(nil, ErrCodeInternal, "upstream MCP server error", nil))
 		}
+		defer resp.Body.Close()
 
-		// Parse response to check for PII in results
-		var resp JSONRPCResponse
-		if err := json.Unmarshal(body, &resp); err == nil && resp.Result != nil {
-			// Could add PII detection on response content here
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return c.Status(502).JSON(NewErrorResponse(nil, ErrCodeInternal, "failed to read upstream response", nil))
 		}
 
 		c.Set("Content-Type", "application/json")
-		return c.Status(statusCode).Send(body)
+		return c.Status(resp.StatusCode).Send(body)
 	}
 }
