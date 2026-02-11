@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/client"
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/audit"
@@ -212,24 +213,26 @@ func (h *Handler) handleResourcesRead(c fiber.Ctx, req *JSONRPCRequest, correlat
 
 // ForwardToServer creates a handler that forwards MCP requests to an upstream server
 func ForwardToServer(upstreamURL string) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		// Forward the original body to upstream
-		agent := fiber.Post(upstreamURL)
-		agent.Body(c.Body())
-		agent.Set("Content-Type", "application/json")
+	cc := client.New()
+	cc.SetTimeout(30 * time.Second)
 
-		statusCode, body, errs := agent.Bytes()
-		if len(errs) > 0 {
+	return func(c fiber.Ctx) error {
+		resp, err := cc.Post(upstreamURL, client.Config{
+			Header: map[string]string{"Content-Type": "application/json"},
+			Body:   c.Body(),
+		})
+		if err != nil {
 			return c.Status(502).JSON(NewErrorResponse(nil, ErrCodeInternal, "upstream MCP server error", nil))
 		}
 
 		// Parse response to check for PII in results
-		var resp JSONRPCResponse
-		if err := json.Unmarshal(body, &resp); err == nil && resp.Result != nil {
+		body := resp.Body()
+		var jsonResp JSONRPCResponse
+		if err := json.Unmarshal(body, &jsonResp); err == nil && jsonResp.Result != nil {
 			// Could add PII detection on response content here
 		}
 
 		c.Set("Content-Type", "application/json")
-		return c.Status(statusCode).Send(body)
+		return c.Status(resp.StatusCode()).Send(body)
 	}
 }
