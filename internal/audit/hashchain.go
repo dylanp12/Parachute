@@ -80,8 +80,8 @@ func (l *HashChainLogger) Log(event *Event) {
 func computeHash(event HashChainEvent) string {
 	// Hash the event without the hash field itself
 	h := sha256.New()
-	h.Write([]byte(event.PrevHash))
-	h.Write([]byte(fmt.Sprintf("%d", event.Seq)))
+	h.Write([]byte(event.Integrity.PrevHash))
+	h.Write([]byte(fmt.Sprintf("%d", event.Integrity.Seq)))
 	h.Write([]byte(event.Timestamp.Format(time.RFC3339Nano)))
 	h.Write([]byte(string(event.EventType)))
 	h.Write([]byte(event.CorrelationID))
