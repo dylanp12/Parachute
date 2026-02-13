@@ -1,6 +1,6 @@
 # 🪂 Parachute
 
-[![CI](https://github.com/parachute-security/parachute/actions/workflows/ci.yml/badge.svg)](https://github.com/parachute-security/parachute/actions/workflows/ci.yml)
+[![CI](https://github.com/dylanp12/parachute/actions/workflows/ci.yml/badge.svg)](https://github.com/parachute-security/parachute/actions/workflows/ci.yml)
 [![Go Version](https://img.shields.io/badge/go-1.23+-blue.svg)](https://golang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Security Policy](https://img.shields.io/badge/Security-Policy-red.svg)](SECURITY.md)
