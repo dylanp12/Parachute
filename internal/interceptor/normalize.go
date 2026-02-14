@@ -242,6 +242,7 @@ func (n *NormalizedToolInvoke) IsCommandTool() bool {
 		"execute_bash", "run_command", "command", "sh",
 		"exec", "system", "subprocess", "cmd", "zsh",
 		"powershell", "pwsh", "execute_command",
+		"ssh_execute", "ssh", "remote_execute", "ssh_run", "ssh_command",
 	}
 
 	toolLower := strings.ToLower(n.ToolName)

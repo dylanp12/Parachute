@@ -7,7 +7,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gofiber/fiber/v3/log"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/parachute-security/parachute/internal/audit"
+	"github.com/parachute-security/parachute/internal/egress"
+	"github.com/parachute-security/parachute/internal/metrics"
 )
 
 // Manager handles SSH connection pooling and target management
@@ -16,6 +21,7 @@ type Manager struct {
 	targets     map[string]*Target
 	connections map[string]*pooledConnection
 	defaults    ManagerConfig
+	egress      *egress.Filter
 }
 
 // ManagerConfig holds default settings for the SSH manager
@@ -31,21 +37,25 @@ type ManagerConfig struct {
 
 	// MaxIdleTime before closing an idle connection (default: 5m)
 	MaxIdleTime time.Duration
+
+	// MaxOutputBytes caps stdout/stderr size (default: 1MB)
+	MaxOutputBytes int
 }
 
 type pooledConnection struct {
-	client       *ssh.Client
-	target       *Target
-	connectedAt  time.Time
-	lastUsedAt   time.Time
-	sessionCount int
-	mu           sync.Mutex
+	client         *ssh.Client
+	target         *Target
+	connectedAt    time.Time
+	lastUsedAt     time.Time
+	sessionCount   int // Total sessions ever
+	activeSessions int // Currently active sessions
+	mu             sync.Mutex
 	// For chained connections, we keep track of intermediate connections
 	intermediates []*ssh.Client
 }
 
 // NewManager creates a new SSH connection manager
-func NewManager(cfg ManagerConfig) *Manager {
+func NewManager(cfg ManagerConfig, egressFilter *egress.Filter) *Manager {
 	if cfg.DefaultTimeout == 0 {
 		cfg.DefaultTimeout = 30 * time.Second
 	}
@@ -58,11 +68,15 @@ func NewManager(cfg ManagerConfig) *Manager {
 	if cfg.MaxIdleTime == 0 {
 		cfg.MaxIdleTime = 5 * time.Minute
 	}
+	if cfg.MaxOutputBytes == 0 {
+		cfg.MaxOutputBytes = 1048576 // 1MB
+	}
 
 	m := &Manager{
 		targets:     make(map[string]*Target),
 		connections: make(map[string]*pooledConnection),
 		defaults:    cfg,
+		egress:      egressFilter,
 	}
 
 	// Start background cleanup of idle connections
@@ -75,6 +89,23 @@ func NewManager(cfg ManagerConfig) *Manager {
 func (m *Manager) AddTarget(t *Target) error {
 	if err := t.Validate(); err != nil {
 		return err
+	}
+
+	// Check egress domain whitelist
+	if m.egress != nil {
+		result := m.egress.CheckURL("ssh://" + t.Host)
+		if !result.Allowed {
+			audit.Log(&audit.Event{
+				EventType: EventSSHEgressBlocked,
+				ToolName:  "ssh_add_target",
+				Reason:    result.Reason,
+				Details: map[string]string{
+					"target": t.Name,
+					"host":   t.Host,
+				},
+			})
+			return fmt.Errorf("target %q host %q not in allowed domains", t.Name, t.Host)
+		}
 	}
 
 	m.mu.Lock()
@@ -180,6 +211,58 @@ func (m *Manager) ResolveChain(targetName string) ([]*Target, error) {
 	return chain, nil
 }
 
+// AcquireSession increments active session count, checking against MaxSessions.
+// Returns an error if the limit is reached. Caller must call ReleaseSession when done.
+func (m *Manager) AcquireSession(targetName string) error {
+	m.mu.RLock()
+	pc, ok := m.connections[targetName]
+	m.mu.RUnlock()
+
+	if !ok {
+		return nil // No pooled connection yet, will be created
+	}
+
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+
+	if pc.target.MaxSessions > 0 && pc.activeSessions >= pc.target.MaxSessions {
+		audit.Log(&audit.Event{
+			EventType: EventSSHSessionLimit,
+			ToolName:  "ssh_execute",
+			Reason:    fmt.Sprintf("max sessions (%d) reached", pc.target.MaxSessions),
+			Details: map[string]string{
+				"target":          targetName,
+				"active_sessions": fmt.Sprintf("%d", pc.activeSessions),
+				"max_sessions":    fmt.Sprintf("%d", pc.target.MaxSessions),
+			},
+		})
+		metrics.Get().SSHSessionLimitHits.Add(1)
+		return fmt.Errorf("max sessions (%d) reached for target %q", pc.target.MaxSessions, targetName)
+	}
+
+	pc.activeSessions++
+	pc.sessionCount++
+	pc.lastUsedAt = time.Now()
+	return nil
+}
+
+// ReleaseSession decrements the active session count for a target
+func (m *Manager) ReleaseSession(targetName string) {
+	m.mu.RLock()
+	pc, ok := m.connections[targetName]
+	m.mu.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	pc.mu.Lock()
+	if pc.activeSessions > 0 {
+		pc.activeSessions--
+	}
+	pc.mu.Unlock()
+}
+
 // GetConnection returns an existing connection or creates a new one
 // For chained targets, it establishes connections through intermediate hops
 func (m *Manager) GetConnection(targetName string) (*ssh.Client, error) {
@@ -197,6 +280,25 @@ func (m *Manager) GetConnection(targetName string) (*ssh.Client, error) {
 	chain, err := m.ResolveChain(targetName)
 	if err != nil {
 		return nil, err
+	}
+
+	// Validate egress for all hosts in chain
+	if m.egress != nil {
+		for _, target := range chain {
+			result := m.egress.CheckURL("ssh://" + target.Host)
+			if !result.Allowed {
+				audit.Log(&audit.Event{
+					EventType: EventSSHEgressBlocked,
+					ToolName:  "ssh_connect",
+					Reason:    result.Reason,
+					Details: map[string]string{
+						"target": target.Name,
+						"host":   target.Host,
+					},
+				})
+				return nil, fmt.Errorf("SSH target %q host %q not in allowed domains", target.Name, target.Host)
+			}
+		}
 	}
 
 	// Build the connection chain
@@ -241,6 +343,7 @@ func (m *Manager) GetConnection(targetName string) (*ssh.Client, error) {
 			for _, c := range intermediates {
 				c.Close()
 			}
+			metrics.Get().SSHHostKeyFailures.Add(1)
 			return nil, fmt.Errorf("SSH handshake failed for %q: %w", target.Name, err)
 		}
 
@@ -264,6 +367,8 @@ func (m *Manager) GetConnection(targetName string) (*ssh.Client, error) {
 	}
 	m.mu.Unlock()
 
+	metrics.Get().SSHConnectionsActive.Add(1)
+
 	return currentClient, nil
 }
 
@@ -279,6 +384,7 @@ func (m *Manager) Disconnect(targetName string) error {
 
 	m.closePooledConnection(pc)
 	delete(m.connections, targetName)
+	metrics.Get().SSHConnectionsActive.Add(-1)
 	return nil
 }
 
@@ -291,6 +397,7 @@ func (m *Manager) DisconnectAll() {
 		m.closePooledConnection(pc)
 		delete(m.connections, name)
 	}
+	metrics.Get().SSHConnectionsActive.Store(0)
 }
 
 // TestConnection verifies SSH connectivity to a target
@@ -330,10 +437,15 @@ func (m *Manager) TestConnection(targetName string) error {
 
 // buildSSHConfig creates an ssh.ClientConfig for a target
 func (m *Manager) buildSSHConfig(target *Target) (*ssh.ClientConfig, error) {
+	hostKeyCallback, err := buildHostKeyCallback(target)
+	if err != nil {
+		return nil, fmt.Errorf("host key verification setup failed for %q: %w", target.Name, err)
+	}
+
 	config := &ssh.ClientConfig{
 		User:            target.User,
 		Timeout:         m.defaults.ConnectTimeout,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // TODO: Add host key verification
+		HostKeyCallback: hostKeyCallback,
 	}
 
 	switch target.AuthMethod {
@@ -411,6 +523,27 @@ func (m *Manager) cleanupLoop() {
 			if idle > m.defaults.MaxIdleTime {
 				m.closePooledConnection(pc)
 				delete(m.connections, name)
+				metrics.Get().SSHConnectionsActive.Add(-1)
+				continue
+			}
+
+			// Proactive health check via SSH keepalive
+			if idle > m.defaults.KeepAliveInterval {
+				_, _, err := pc.client.SendRequest("keepalive@openssh.com", true, nil)
+				if err != nil {
+					log.Warnf("[SSH] Connection to %q is stale, removing from pool", name)
+					audit.Log(&audit.Event{
+						EventType: EventSSHStaleConn,
+						ToolName:  "ssh_keepalive",
+						Reason:    err.Error(),
+						Details: map[string]string{
+							"target": name,
+						},
+					})
+					m.closePooledConnection(pc)
+					delete(m.connections, name)
+					metrics.Get().SSHConnectionsActive.Add(-1)
+				}
 			}
 		}
 		m.mu.Unlock()

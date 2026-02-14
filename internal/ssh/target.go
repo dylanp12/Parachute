@@ -43,6 +43,12 @@ type Target struct {
 
 	// MaxSessions limits concurrent SSH sessions to this target (0 = unlimited)
 	MaxSessions int `json:"max_sessions,omitempty" yaml:"max_sessions"`
+
+	// HostKeyFingerprint is the expected SHA256 fingerprint (e.g. "SHA256:abc123...")
+	HostKeyFingerprint string `json:"host_key_fingerprint,omitempty" yaml:"host_key_fingerprint"`
+
+	// KnownHostsFile is a path to an OpenSSH known_hosts file for this target
+	KnownHostsFile string `json:"known_hosts_file,omitempty" yaml:"known_hosts_file"`
 }
 
 // ConnectionInfo holds runtime state for an active SSH target
@@ -152,4 +158,10 @@ type ExecutionResult struct {
 
 	// CorrelationID links this result to the originating request
 	CorrelationID string `json:"correlation_id,omitempty"`
+
+	// PIIDetected indicates PII was found and redacted from output
+	PIIDetected bool `json:"pii_detected,omitempty"`
+
+	// OutputTruncated indicates stdout or stderr exceeded the size limit
+	OutputTruncated bool `json:"output_truncated,omitempty"`
 }

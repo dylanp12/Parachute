@@ -41,6 +41,17 @@ type Metrics struct {
 	MCPToolCallsAllowed  atomic.Int64
 	MCPResourceReads     atomic.Int64
 
+	// SSH
+	SSHExecutionsTotal   atomic.Int64
+	SSHExecutionsBlocked atomic.Int64
+	SSHExecutionsPending atomic.Int64
+	SSHExecutionsAllowed atomic.Int64
+	SSHExecutionsFailed  atomic.Int64
+	SSHPIIDetected       atomic.Int64
+	SSHConnectionsActive atomic.Int64
+	SSHSessionLimitHits  atomic.Int64
+	SSHHostKeyFailures   atomic.Int64
+
 	// Latency tracking (in microseconds)
 	latencyMu    sync.Mutex
 	latencySum   int64
@@ -155,6 +166,43 @@ func Handler() fiber.Handler {
 		sb.WriteString("\n# HELP parachute_mcp_resource_reads Total MCP resource reads\n")
 		sb.WriteString("# TYPE parachute_mcp_resource_reads counter\n")
 		sb.WriteString(fmt.Sprintf("parachute_mcp_resource_reads %d\n", m.MCPResourceReads.Load()))
+
+		// SSH metrics
+		sb.WriteString("\n# HELP parachute_ssh_executions_total Total SSH command executions\n")
+		sb.WriteString("# TYPE parachute_ssh_executions_total counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_executions_total %d\n", m.SSHExecutionsTotal.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_executions_blocked Total SSH executions blocked by policy\n")
+		sb.WriteString("# TYPE parachute_ssh_executions_blocked counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_executions_blocked %d\n", m.SSHExecutionsBlocked.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_executions_pending Total SSH executions pending approval\n")
+		sb.WriteString("# TYPE parachute_ssh_executions_pending counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_executions_pending %d\n", m.SSHExecutionsPending.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_executions_allowed Total SSH executions allowed\n")
+		sb.WriteString("# TYPE parachute_ssh_executions_allowed counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_executions_allowed %d\n", m.SSHExecutionsAllowed.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_executions_failed Total SSH executions failed\n")
+		sb.WriteString("# TYPE parachute_ssh_executions_failed counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_executions_failed %d\n", m.SSHExecutionsFailed.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_pii_detected Total SSH outputs with PII detected\n")
+		sb.WriteString("# TYPE parachute_ssh_pii_detected counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_pii_detected %d\n", m.SSHPIIDetected.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_connections_active Currently active SSH connections\n")
+		sb.WriteString("# TYPE parachute_ssh_connections_active gauge\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_connections_active %d\n", m.SSHConnectionsActive.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_session_limit_hits Total SSH session limit rejections\n")
+		sb.WriteString("# TYPE parachute_ssh_session_limit_hits counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_session_limit_hits %d\n", m.SSHSessionLimitHits.Load()))
+
+		sb.WriteString("\n# HELP parachute_ssh_host_key_failures Total SSH host key verification failures\n")
+		sb.WriteString("# TYPE parachute_ssh_host_key_failures counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_ssh_host_key_failures %d\n", m.SSHHostKeyFailures.Load()))
 
 		// Latency metrics
 		m.latencyMu.Lock()

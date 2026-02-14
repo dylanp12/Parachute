@@ -517,6 +517,7 @@ func isCommandTool(toolName string) bool {
 		"bash", "shell", "terminal", "execute", "run",
 		"execute_bash", "run_command", "command", "sh",
 		"exec", "system", "subprocess", "cmd",
+		"ssh_execute", "ssh", "remote_execute", "ssh_run", "ssh_command",
 	}
 	toolLower := strings.ToLower(toolName)
 	for _, ct := range commandTools {

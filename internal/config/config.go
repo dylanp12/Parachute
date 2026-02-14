@@ -34,18 +34,20 @@ type SSHConfig struct {
 
 // SSHTargetConfig defines a remote SSH execution target
 type SSHTargetConfig struct {
-	Name        string            `yaml:"name"`
-	Host        string            `yaml:"host"`
-	Port        int               `yaml:"port"`
-	User        string            `yaml:"user"`
-	AuthMethod  string            `yaml:"auth_method"` // key, key_file, password_env, agent
-	KeyFile     string            `yaml:"key_file"`
-	KeyEnv      string            `yaml:"key_env"`
-	PasswordEnv string            `yaml:"password_env"`
-	ProxyJump   string            `yaml:"proxy_jump"` // Name of another target to jump through
-	Labels      map[string]string `yaml:"labels"`
-	Enabled     bool              `yaml:"enabled"`
-	MaxSessions int               `yaml:"max_sessions"`
+	Name               string            `yaml:"name"`
+	Host               string            `yaml:"host"`
+	Port               int               `yaml:"port"`
+	User               string            `yaml:"user"`
+	AuthMethod         string            `yaml:"auth_method"` // key, key_file, password_env, agent
+	KeyFile            string            `yaml:"key_file"`
+	KeyEnv             string            `yaml:"key_env"`
+	PasswordEnv        string            `yaml:"password_env"`
+	ProxyJump          string            `yaml:"proxy_jump"` // Name of another target to jump through
+	Labels             map[string]string `yaml:"labels"`
+	Enabled            bool              `yaml:"enabled"`
+	MaxSessions        int               `yaml:"max_sessions"`
+	HostKeyFingerprint string            `yaml:"host_key_fingerprint"` // SHA256 fingerprint for host key pinning
+	KnownHostsFile     string            `yaml:"known_hosts_file"`     // Path to known_hosts file
 }
 
 // SSHDefaultsConfig provides default timeout values for SSH connections
@@ -54,6 +56,57 @@ type SSHDefaultsConfig struct {
 	ConnectTimeoutSec int `yaml:"connect_timeout_sec"` // Default: 10
 	KeepAliveSeconds  int `yaml:"keepalive_sec"`       // Default: 30
 	MaxIdleSeconds    int `yaml:"max_idle_sec"`        // Default: 300
+	MaxOutputBytes    int `yaml:"max_output_bytes"`    // Default: 1048576 (1MB)
+}
+
+// Validate checks SSH configuration for correctness
+func (s *SSHConfig) Validate() error {
+	if !s.Enabled {
+		return nil
+	}
+
+	names := make(map[string]bool)
+	for _, t := range s.Targets {
+		if t.Name == "" {
+			return fmt.Errorf("SSH target with empty name found")
+		}
+		if names[t.Name] {
+			return fmt.Errorf("duplicate SSH target name: %q", t.Name)
+		}
+		names[t.Name] = true
+	}
+
+	// Check ProxyJump references exist
+	for _, t := range s.Targets {
+		if t.ProxyJump != "" && !names[t.ProxyJump] {
+			return fmt.Errorf("SSH target %q references unknown proxy_jump target %q", t.Name, t.ProxyJump)
+		}
+	}
+
+	// Check for circular chains
+	for _, t := range s.Targets {
+		visited := map[string]bool{}
+		current := t.Name
+		for current != "" {
+			if visited[current] {
+				return fmt.Errorf("circular SSH chain detected involving target %q", t.Name)
+			}
+			visited[current] = true
+			found := false
+			for _, t2 := range s.Targets {
+				if t2.Name == current {
+					current = t2.ProxyJump
+					found = true
+					break
+				}
+			}
+			if !found {
+				break
+			}
+		}
+	}
+
+	return nil
 }
 
 // MCPConfig defines Model Context Protocol proxy settings
@@ -265,6 +318,9 @@ func Load(path string) (*Config, error) {
 	}
 	if err := cfg.Egress.Compile(); err != nil {
 		return nil, err
+	}
+	if err := cfg.SSH.Validate(); err != nil {
+		return nil, fmt.Errorf("SSH config: %w", err)
 	}
 
 	return &cfg, nil

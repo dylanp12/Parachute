@@ -9,20 +9,49 @@ import (
 
 	"github.com/gofiber/fiber/v3/log"
 	"github.com/parachute-security/parachute/internal/audit"
+	"github.com/parachute-security/parachute/internal/egress"
 	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/parachute-security/parachute/internal/metrics"
 )
+
+// limitedWriter wraps a bytes.Buffer and caps writes at a maximum size.
+// Writes beyond the limit are silently discarded.
+type limitedWriter struct {
+	buf    bytes.Buffer
+	max    int
+	capped bool
+}
+
+func (lw *limitedWriter) Write(p []byte) (int, error) {
+	remaining := lw.max - lw.buf.Len()
+	if remaining <= 0 {
+		lw.capped = true
+		return len(p), nil // discard but report success
+	}
+	if len(p) > remaining {
+		lw.capped = true
+		p = p[:remaining]
+	}
+	return lw.buf.Write(p)
+}
+
+func (lw *limitedWriter) String() string {
+	return lw.buf.String()
+}
 
 // Executor handles secure command execution across SSH chains
 type Executor struct {
 	manager     *Manager
 	interceptor *interceptor.Interceptor
+	egress      *egress.Filter
 }
 
 // NewExecutor creates a new SSH command executor
-func NewExecutor(manager *Manager, intcpt *interceptor.Interceptor) *Executor {
+func NewExecutor(manager *Manager, intcpt *interceptor.Interceptor, egressFilter *egress.Filter) *Executor {
 	return &Executor{
 		manager:     manager,
 		interceptor: intcpt,
+		egress:      egressFilter,
 	}
 }
 
@@ -41,11 +70,14 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 		CorrelationID: correlationID,
 	}
 
+	metrics.Get().SSHExecutionsTotal.Add(1)
+
 	// Resolve the chain to record the hop path
 	chain, err := e.manager.ResolveChain(req.TargetName)
 	if err != nil {
 		result.Error = fmt.Sprintf("failed to resolve chain: %v", err)
 		result.ExitCode = -1
+		metrics.Get().SSHExecutionsFailed.Add(1)
 		return result
 	}
 
@@ -70,12 +102,22 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 		},
 	})
 
+	// Acquire a session slot (enforces MaxSessions)
+	if err := e.manager.AcquireSession(req.TargetName); err != nil {
+		result.Error = fmt.Sprintf("session limit: %v", err)
+		result.ExitCode = -1
+		metrics.Get().SSHExecutionsFailed.Add(1)
+		return result
+	}
+	defer e.manager.ReleaseSession(req.TargetName)
+
 	// Get or establish the SSH connection (handles chaining internally)
 	client, err := e.manager.GetConnection(req.TargetName)
 	if err != nil {
 		result.Error = fmt.Sprintf("connection failed: %v", err)
 		result.ExitCode = -1
 		result.Duration = time.Since(startTime)
+		metrics.Get().SSHExecutionsFailed.Add(1)
 
 		audit.Log(&audit.Event{
 			EventType:     EventSSHError,
@@ -99,6 +141,7 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 			result.Error = fmt.Sprintf("reconnection failed: %v", err)
 			result.ExitCode = -1
 			result.Duration = time.Since(startTime)
+			metrics.Get().SSHExecutionsFailed.Add(1)
 			return result
 		}
 		session, err = client.NewSession()
@@ -106,6 +149,7 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 			result.Error = fmt.Sprintf("session creation failed: %v", err)
 			result.ExitCode = -1
 			result.Duration = time.Since(startTime)
+			metrics.Get().SSHExecutionsFailed.Add(1)
 			return result
 		}
 	}
@@ -126,10 +170,15 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 		cmd = fmt.Sprintf("cd %s && %s", shellQuote(req.WorkingDir), cmd)
 	}
 
-	// Set up output capture
-	var stdout, stderr bytes.Buffer
-	session.Stdout = &stdout
-	session.Stderr = &stderr
+	// Set up output capture with size limits
+	maxOutput := e.manager.defaults.MaxOutputBytes
+	if maxOutput <= 0 {
+		maxOutput = 1048576 // 1MB default
+	}
+	stdout := &limitedWriter{max: maxOutput}
+	stderr := &limitedWriter{max: maxOutput}
+	session.Stdout = stdout
+	session.Stderr = stderr
 
 	// Execute with timeout
 	timeout := req.Timeout
@@ -151,6 +200,7 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 		result.Stdout = stdout.String()
 		result.Stderr = stderr.String()
 		result.Duration = time.Since(startTime)
+		result.OutputTruncated = stdout.capped || stderr.capped
 
 		if err != nil {
 			// Try to extract exit code from SSH error
@@ -168,6 +218,7 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 		result.Duration = time.Since(startTime)
 		result.ExitCode = -1
 		result.Error = fmt.Sprintf("command timed out after %v", timeout)
+		result.OutputTruncated = stdout.capped || stderr.capped
 
 		audit.Log(&audit.Event{
 			EventType:     EventSSHTimeout,
@@ -180,20 +231,43 @@ func (e *Executor) Execute(ctx context.Context, req *ExecutionRequest) *Executio
 		})
 	}
 
-	// Update session count
-	e.manager.mu.RLock()
-	if pc, ok := e.manager.connections[req.TargetName]; ok {
-		pc.mu.Lock()
-		pc.sessionCount++
-		pc.lastUsedAt = time.Now()
-		pc.mu.Unlock()
+	// PII scanning on output
+	if e.egress != nil {
+		if result.Stdout != "" {
+			contentResult := e.egress.CheckContent(result.Stdout)
+			if !contentResult.Allowed {
+				result.PIIDetected = true
+				result.Stdout = "[REDACTED: PII detected - " + contentResult.Pattern + "]"
+				metrics.Get().SSHPIIDetected.Add(1)
+				audit.Log(&audit.Event{
+					EventType:     EventSSHPIIDetected,
+					CorrelationID: correlationID,
+					ToolName:      "ssh_execute",
+					Reason:        "PII detected in stdout",
+					Details: map[string]string{
+						"target":  req.TargetName,
+						"pattern": contentResult.Pattern,
+					},
+				})
+			}
+		}
+		if result.Stderr != "" {
+			contentResult := e.egress.CheckContent(result.Stderr)
+			if !contentResult.Allowed {
+				result.PIIDetected = true
+				result.Stderr = "[REDACTED: PII detected - " + contentResult.Pattern + "]"
+				if !result.PIIDetected {
+					metrics.Get().SSHPIIDetected.Add(1)
+				}
+			}
+		}
 	}
-	e.manager.mu.RUnlock()
 
 	// Log completion
 	eventType := EventSSHComplete
 	if result.ExitCode != 0 {
 		eventType = EventSSHError
+		metrics.Get().SSHExecutionsFailed.Add(1)
 	}
 
 	audit.Log(&audit.Event{
@@ -236,6 +310,7 @@ func (e *Executor) CheckAndExecute(ctx context.Context, req *ExecutionRequest) (
 
 	// If blocked, return immediately
 	if checkResult.Action == interceptor.ActionBlock {
+		metrics.Get().SSHExecutionsBlocked.Add(1)
 		audit.Log(&audit.Event{
 			EventType:     EventSSHBlock,
 			CorrelationID: correlationID,
@@ -258,10 +333,12 @@ func (e *Executor) CheckAndExecute(ctx context.Context, req *ExecutionRequest) (
 
 	// If pending (requires approval), return the check result for the caller to handle
 	if checkResult.Action == interceptor.ActionPending {
+		metrics.Get().SSHExecutionsPending.Add(1)
 		return checkResult, nil
 	}
 
 	// Command is allowed - execute
+	metrics.Get().SSHExecutionsAllowed.Add(1)
 	return checkResult, e.Execute(ctx, req)
 }
 

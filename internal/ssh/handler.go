@@ -2,6 +2,8 @@ package ssh
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -9,6 +11,7 @@ import (
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/audit"
 	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/parachute-security/parachute/internal/storage"
 )
 
 // Handler provides HTTP API endpoints for SSH execution chaining
@@ -17,15 +20,17 @@ type Handler struct {
 	executor  *Executor
 	approvalQ *approval.Queue
 	notifier  *approval.Notifier
+	store     *storage.Store
 }
 
 // NewHandler creates a new SSH API handler
-func NewHandler(manager *Manager, executor *Executor, approvalQ *approval.Queue, notifier *approval.Notifier) *Handler {
+func NewHandler(manager *Manager, executor *Executor, approvalQ *approval.Queue, notifier *approval.Notifier, store *storage.Store) *Handler {
 	return &Handler{
 		manager:   manager,
 		executor:  executor,
 		approvalQ: approvalQ,
 		notifier:  notifier,
+		store:     store,
 	}
 }
 
@@ -48,6 +53,10 @@ func (h *Handler) RegisterRoutes(router fiber.Router) {
 
 	// Chain resolution
 	router.Get("/chain/:name", h.resolveChain)
+
+	// Execution history
+	router.Get("/history", h.listHistory)
+	router.Get("/history/:target", h.listHistoryByTarget)
 }
 
 func (h *Handler) listTargets(c fiber.Ctx) error {
@@ -342,6 +351,9 @@ func (h *Handler) execute(c fiber.Ctx) error {
 		}
 	}
 
+	// Persist execution result
+	h.persistResult(execResult)
+
 	// Return execution result
 	status := fiber.StatusOK
 	if execResult.ExitCode != 0 {
@@ -381,6 +393,88 @@ func (h *Handler) resolveChain(c fiber.Ctx) error {
 		"chain":     hops,
 		"hop_count": len(chain),
 	})
+}
+
+func (h *Handler) listHistory(c fiber.Ctx) error {
+	if h.store == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "execution history requires SQLite storage",
+		})
+	}
+
+	limit := 50
+	if l := c.Query("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+
+	executions, err := h.store.ListSSHExecutions("", limit)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": fmt.Sprintf("failed to list history: %v", err),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"executions": executions,
+		"count":      len(executions),
+	})
+}
+
+func (h *Handler) listHistoryByTarget(c fiber.Ctx) error {
+	if h.store == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": "execution history requires SQLite storage",
+		})
+	}
+
+	target := c.Params("target")
+	limit := 50
+	if l := c.Query("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+
+	executions, err := h.store.ListSSHExecutions(target, limit)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": fmt.Sprintf("failed to list history: %v", err),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"target":     target,
+		"executions": executions,
+		"count":      len(executions),
+	})
+}
+
+// persistResult stores an SSH execution result in the database
+func (h *Handler) persistResult(result *ExecutionResult) {
+	if h.store == nil || result == nil {
+		return
+	}
+
+	exec := &storage.SSHExecution{
+		CorrelationID:   result.CorrelationID,
+		TargetName:      result.TargetName,
+		Command:         result.Command,
+		ExitCode:        result.ExitCode,
+		Stdout:          result.Stdout,
+		Stderr:          result.Stderr,
+		Error:           result.Error,
+		Chain:           strings.Join(result.Chain, " -> "),
+		DurationNs:      result.Duration.Nanoseconds(),
+		PIIDetected:     result.PIIDetected,
+		OutputTruncated: result.OutputTruncated,
+		CreatedAt:       time.Now(),
+	}
+
+	if err := h.store.StoreSSHExecution(exec); err != nil {
+		log.Warnf("[SSH] Failed to persist execution result: %v", err)
+	}
 }
 
 // ExecuteOnChain executes a command across multiple targets in sequence

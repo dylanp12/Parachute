@@ -205,7 +205,7 @@ func TestTargetValidate(t *testing.T) {
 }
 
 func TestManagerAddAndListTargets(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	target := &Target{
 		Name:       "test-server",
@@ -246,7 +246,7 @@ func TestManagerAddAndListTargets(t *testing.T) {
 }
 
 func TestManagerRemoveTarget(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	target := &Target{
 		Name:       "removable",
@@ -273,7 +273,7 @@ func TestManagerRemoveTarget(t *testing.T) {
 }
 
 func TestManagerResolveChain(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	// Set up a chain: local -> bastion -> app-server
 	mgr.AddTarget(&Target{
@@ -310,7 +310,7 @@ func TestManagerResolveChain(t *testing.T) {
 }
 
 func TestManagerResolveChainDirect(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	mgr.AddTarget(&Target{
 		Name:       "direct",
@@ -334,7 +334,7 @@ func TestManagerResolveChainDirect(t *testing.T) {
 }
 
 func TestManagerResolveChainCircular(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	mgr.AddTarget(&Target{
 		Name:       "a",
@@ -360,7 +360,7 @@ func TestManagerResolveChainCircular(t *testing.T) {
 }
 
 func TestManagerResolveChainDisabled(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	mgr.AddTarget(&Target{
 		Name:       "disabled-target",
@@ -377,7 +377,7 @@ func TestManagerResolveChainDisabled(t *testing.T) {
 }
 
 func TestManagerResolveChainMissing(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	_, err := mgr.ResolveChain("nonexistent")
 	if err == nil {
@@ -386,7 +386,7 @@ func TestManagerResolveChainMissing(t *testing.T) {
 }
 
 func TestManagerResolveThreeHopChain(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	mgr.AddTarget(&Target{
 		Name:       "hop1",
@@ -432,7 +432,7 @@ func TestManagerResolveThreeHopChain(t *testing.T) {
 }
 
 func TestListConnections(t *testing.T) {
-	mgr := NewManager(ManagerConfig{})
+	mgr := NewManager(ManagerConfig{}, nil)
 
 	mgr.AddTarget(&Target{
 		Name:       "server-a",

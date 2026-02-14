@@ -18,6 +18,7 @@ import (
 	"github.com/parachute-security/parachute/internal/approval"
 	"github.com/parachute-security/parachute/internal/config"
 	"github.com/parachute-security/parachute/internal/dashboard"
+	"github.com/parachute-security/parachute/internal/egress"
 	"github.com/parachute-security/parachute/internal/interceptor"
 	"github.com/parachute-security/parachute/internal/mcp"
 	"github.com/parachute-security/parachute/internal/metrics"
@@ -170,23 +171,30 @@ func main() {
 			sshDefaults.MaxIdleTime = time.Duration(cfg.SSH.Defaults.MaxIdleSeconds) * time.Second
 		}
 
-		sshManager = sshpkg.NewManager(sshDefaults)
+		if cfg.SSH.Defaults.MaxOutputBytes > 0 {
+			sshDefaults.MaxOutputBytes = cfg.SSH.Defaults.MaxOutputBytes
+		}
+
+		egressFilter := egress.New(&cfg.Egress)
+		sshManager = sshpkg.NewManager(sshDefaults, egressFilter)
 
 		// Register targets from config
 		for _, tc := range cfg.SSH.Targets {
 			target := &sshpkg.Target{
-				Name:        tc.Name,
-				Host:        tc.Host,
-				Port:        tc.Port,
-				User:        tc.User,
-				AuthMethod:  tc.AuthMethod,
-				KeyFile:     tc.KeyFile,
-				KeyEnv:      tc.KeyEnv,
-				PasswordEnv: tc.PasswordEnv,
-				ProxyJump:   tc.ProxyJump,
-				Labels:      tc.Labels,
-				Enabled:     tc.Enabled,
-				MaxSessions: tc.MaxSessions,
+				Name:               tc.Name,
+				Host:               tc.Host,
+				Port:               tc.Port,
+				User:               tc.User,
+				AuthMethod:         tc.AuthMethod,
+				KeyFile:            tc.KeyFile,
+				KeyEnv:             tc.KeyEnv,
+				PasswordEnv:        tc.PasswordEnv,
+				ProxyJump:          tc.ProxyJump,
+				Labels:             tc.Labels,
+				Enabled:            tc.Enabled,
+				MaxSessions:        tc.MaxSessions,
+				HostKeyFingerprint: tc.HostKeyFingerprint,
+				KnownHostsFile:     tc.KnownHostsFile,
 			}
 			if err := sshManager.AddTarget(target); err != nil {
 				log.Fatalf("Failed to add SSH target %q: %v", tc.Name, err)
@@ -195,8 +203,8 @@ func main() {
 		}
 
 		cmdInterceptor := interceptor.New(&cfg.RiskPolicy)
-		sshExecutor := sshpkg.NewExecutor(sshManager, cmdInterceptor)
-		sshHandler := sshpkg.NewHandler(sshManager, sshExecutor, approvalQ, notifier)
+		sshExecutor := sshpkg.NewExecutor(sshManager, cmdInterceptor, egressFilter)
+		sshHandler := sshpkg.NewHandler(sshManager, sshExecutor, approvalQ, notifier, store)
 
 		sshGroup := app.Group("/api/ssh")
 		sshGroup.Use(rateLimiter.Handler())
