@@ -20,6 +20,7 @@ import (
 	"github.com/parachute-security/parachute/internal/config"
 	"github.com/parachute-security/parachute/internal/egress"
 	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/parachute-security/parachute/internal/metrics"
 )
 
 // Proxy handles proxying requests to the upstream agent
@@ -72,6 +73,8 @@ func (p *Proxy) Handler() fiber.Handler {
 			result := p.egress.CheckContent(string(body))
 			if !result.Allowed {
 				log.Warnf("[BLOCKED] PII detected in request: %s", result.Pattern)
+				metrics.Get().PIIDetected.Add(1)
+				metrics.Get().RequestsBlocked.Add(1)
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":   "request blocked",
 					"reason":  result.Reason,
@@ -93,6 +96,7 @@ func (p *Proxy) Handler() fiber.Handler {
 				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 			}
 			if blocked {
+				metrics.Get().RequestsBlocked.Add(1)
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":  "command blocked by policy",
 					"reason": "command matches block list or was denied",
@@ -370,6 +374,11 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 			case interceptor.ActionBlock:
 				log.Warnf("[OPENCLAW:BLOCKED] [%s] Tool %s command blocked: %s (reason: %s, format: %s)",
 					correlationID, normalized.ToolName, truncateCommand(command), result.Reason, normalized.Format)
+				metrics.Get().CommandsBlocked.Add(1)
+				metrics.Get().RequestsBlocked.Add(1)
+				if interceptor.IsForkBomb(command) {
+					metrics.Get().ForkBombsBlocked.Add(1)
+				}
 				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 					"error":          "tool invocation blocked by policy",
 					"tool":           normalized.ToolName,
@@ -381,6 +390,7 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 			case interceptor.ActionPending:
 				log.Infof("[OPENCLAW:PENDING] [%s] Tool %s requires approval: %s (format: %s)",
 					correlationID, normalized.ToolName, truncateCommand(command), normalized.Format)
+				metrics.Get().CommandsPending.Add(1)
 
 				pc := p.approvalQ.Add(command, normalized.ToolName, result.Reason, normalized.Args)
 				if err := p.notifier.NotifyPending(pc); err != nil {
@@ -393,10 +403,13 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 				case approval.DecisionApproved:
 					log.Infof("[OPENCLAW:APPROVED] [%s] Tool %s approved: %s",
 						correlationID, normalized.ToolName, truncateCommand(command))
+					metrics.Get().RequestsApproved.Add(1)
+					metrics.Get().CommandsAllowed.Add(1)
 					// Continue to forward the request
 				case approval.DecisionDenied:
 					log.Warnf("[OPENCLAW:DENIED] [%s] Tool %s denied: %s",
 						correlationID, normalized.ToolName, truncateCommand(command))
+					metrics.Get().RequestsDenied.Add(1)
 					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 						"error":          "tool invocation denied",
 						"tool":           normalized.ToolName,
@@ -418,6 +431,7 @@ func (p *Proxy) handleOpenClawToolInvoke(c fiber.Ctx, body []byte) error {
 			default:
 				log.Infof("[OPENCLAW:ALLOWED] [%s] Tool %s command allowed: %s (format: %s)",
 					correlationID, normalized.ToolName, truncateCommand(command), normalized.Format)
+				metrics.Get().CommandsAllowed.Add(1)
 			}
 		} else {
 			// Command tool but no command found - log warning but allow
@@ -459,10 +473,15 @@ func (p *Proxy) checkToolCalls(ctx context.Context, body []byte) (blocked bool, 
 	switch result.Action {
 	case interceptor.ActionBlock:
 		log.Warnf("[BLOCKED] Command blocked: %s (reason: %s)", tc.Command, result.Reason)
+		metrics.Get().CommandsBlocked.Add(1)
+		if interceptor.IsForkBomb(tc.Command) {
+			metrics.Get().ForkBombsBlocked.Add(1)
+		}
 		return true, nil
 
 	case interceptor.ActionPending:
 		log.Infof("[PENDING] Command requires approval: %s", tc.Command)
+		metrics.Get().CommandsPending.Add(1)
 
 		pc := p.approvalQ.Add(tc.Command, tc.Name, result.Reason, tc.Args)
 		if err := p.notifier.NotifyPending(pc); err != nil {
@@ -474,9 +493,12 @@ func (p *Proxy) checkToolCalls(ctx context.Context, body []byte) (blocked bool, 
 		switch decision {
 		case approval.DecisionApproved:
 			log.Infof("[APPROVED] Command approved: %s", tc.Command)
+			metrics.Get().RequestsApproved.Add(1)
+			metrics.Get().CommandsAllowed.Add(1)
 			return false, nil
 		case approval.DecisionDenied:
 			log.Warnf("[DENIED] Command denied: %s", tc.Command)
+			metrics.Get().RequestsDenied.Add(1)
 			return true, nil
 		default:
 			log.Warnf("[EXPIRED] Approval timed out: %s", tc.Command)
@@ -484,6 +506,7 @@ func (p *Proxy) checkToolCalls(ctx context.Context, body []byte) (blocked bool, 
 		}
 
 	default:
+		metrics.Get().CommandsAllowed.Add(1)
 		return false, nil
 	}
 }
