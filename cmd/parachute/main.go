@@ -24,6 +24,7 @@ import (
 	"github.com/parachute-security/parachute/internal/middleware"
 	"github.com/parachute-security/parachute/internal/proxy"
 	"github.com/parachute-security/parachute/internal/relay"
+	sshpkg "github.com/parachute-security/parachute/internal/ssh"
 	"github.com/parachute-security/parachute/internal/storage"
 )
 
@@ -102,8 +103,8 @@ func main() {
 	// Global middleware
 	app.Use(recover.New())
 	app.Use(middleware.StripForwardedHeaders()) // Strip/overwrite X-Forwarded-* headers for security
-	app.Use(middleware.SecureHeaders())          // Add security headers (X-Frame-Options, etc.)
-	app.Use(middleware.CorrelationID())          // Add correlation ID to all requests
+	app.Use(middleware.SecureHeaders())         // Add security headers (X-Frame-Options, etc.)
+	app.Use(middleware.CorrelationID())         // Add correlation ID to all requests
 	app.Use(logger.New(logger.Config{
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
@@ -152,6 +153,59 @@ func main() {
 		log.Infof("MCP proxy enabled on /mcp")
 	}
 
+	// SSH execution chaining
+	var sshManager *sshpkg.Manager
+	if cfg.SSH.Enabled {
+		sshDefaults := sshpkg.ManagerConfig{}
+		if cfg.SSH.Defaults.CommandTimeoutSec > 0 {
+			sshDefaults.DefaultTimeout = time.Duration(cfg.SSH.Defaults.CommandTimeoutSec) * time.Second
+		}
+		if cfg.SSH.Defaults.ConnectTimeoutSec > 0 {
+			sshDefaults.ConnectTimeout = time.Duration(cfg.SSH.Defaults.ConnectTimeoutSec) * time.Second
+		}
+		if cfg.SSH.Defaults.KeepAliveSeconds > 0 {
+			sshDefaults.KeepAliveInterval = time.Duration(cfg.SSH.Defaults.KeepAliveSeconds) * time.Second
+		}
+		if cfg.SSH.Defaults.MaxIdleSeconds > 0 {
+			sshDefaults.MaxIdleTime = time.Duration(cfg.SSH.Defaults.MaxIdleSeconds) * time.Second
+		}
+
+		sshManager = sshpkg.NewManager(sshDefaults)
+
+		// Register targets from config
+		for _, tc := range cfg.SSH.Targets {
+			target := &sshpkg.Target{
+				Name:        tc.Name,
+				Host:        tc.Host,
+				Port:        tc.Port,
+				User:        tc.User,
+				AuthMethod:  tc.AuthMethod,
+				KeyFile:     tc.KeyFile,
+				KeyEnv:      tc.KeyEnv,
+				PasswordEnv: tc.PasswordEnv,
+				ProxyJump:   tc.ProxyJump,
+				Labels:      tc.Labels,
+				Enabled:     tc.Enabled,
+				MaxSessions: tc.MaxSessions,
+			}
+			if err := sshManager.AddTarget(target); err != nil {
+				log.Fatalf("Failed to add SSH target %q: %v", tc.Name, err)
+			}
+			log.Infof("SSH target registered: %s (%s@%s:%d)", tc.Name, tc.User, tc.Host, tc.Port)
+		}
+
+		cmdInterceptor := interceptor.New(&cfg.RiskPolicy)
+		sshExecutor := sshpkg.NewExecutor(sshManager, cmdInterceptor)
+		sshHandler := sshpkg.NewHandler(sshManager, sshExecutor, approvalQ, notifier)
+
+		sshGroup := app.Group("/api/ssh")
+		sshGroup.Use(rateLimiter.Handler())
+		sshGroup.Use(middleware.Auth(&cfg.Auth))
+		sshHandler.RegisterRoutes(sshGroup)
+
+		log.Infof("SSH execution chaining enabled with %d target(s)", len(cfg.SSH.Targets))
+	}
+
 	// Cloud relay (Phase 3)
 	if cfg.Relay.Enabled {
 		relayClient := relay.New(&cfg.Relay, approvalQ)
@@ -187,6 +241,11 @@ func main() {
 
 	if err := proxyServer.Close(); err != nil {
 		log.Errorf("Forward proxy shutdown error: %v", err)
+	}
+
+	if sshManager != nil {
+		sshManager.DisconnectAll()
+		log.Info("SSH connections closed")
 	}
 
 	if store != nil {

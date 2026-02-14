@@ -17,6 +17,7 @@ type Config struct {
 	Relay       RelayConfig      `yaml:"relay"`
 	Storage     StorageConfig    `yaml:"storage"`
 	MCP         MCPConfig        `yaml:"mcp"`
+	SSH         SSHConfig        `yaml:"ssh"`
 	Webhooks    []WebhookConfig  `yaml:"webhooks"`
 	License     LicenseConfig    `yaml:"license"`
 	Upstream    string           `yaml:"upstream"`
@@ -24,10 +25,41 @@ type Config struct {
 	ProxyListen string           `yaml:"proxy_listen"` // Forward proxy listen address for agent egress
 }
 
+// SSHConfig defines SSH execution chaining settings
+type SSHConfig struct {
+	Enabled  bool              `yaml:"enabled"`
+	Targets  []SSHTargetConfig `yaml:"targets"`
+	Defaults SSHDefaultsConfig `yaml:"defaults"`
+}
+
+// SSHTargetConfig defines a remote SSH execution target
+type SSHTargetConfig struct {
+	Name        string            `yaml:"name"`
+	Host        string            `yaml:"host"`
+	Port        int               `yaml:"port"`
+	User        string            `yaml:"user"`
+	AuthMethod  string            `yaml:"auth_method"` // key, key_file, password_env, agent
+	KeyFile     string            `yaml:"key_file"`
+	KeyEnv      string            `yaml:"key_env"`
+	PasswordEnv string            `yaml:"password_env"`
+	ProxyJump   string            `yaml:"proxy_jump"` // Name of another target to jump through
+	Labels      map[string]string `yaml:"labels"`
+	Enabled     bool              `yaml:"enabled"`
+	MaxSessions int               `yaml:"max_sessions"`
+}
+
+// SSHDefaultsConfig provides default timeout values for SSH connections
+type SSHDefaultsConfig struct {
+	CommandTimeoutSec int `yaml:"command_timeout_sec"` // Default: 30
+	ConnectTimeoutSec int `yaml:"connect_timeout_sec"` // Default: 10
+	KeepAliveSeconds  int `yaml:"keepalive_sec"`       // Default: 30
+	MaxIdleSeconds    int `yaml:"max_idle_sec"`        // Default: 300
+}
+
 // MCPConfig defines Model Context Protocol proxy settings
 type MCPConfig struct {
 	Enabled       bool                       `yaml:"enabled"`
-	Listen        string                     `yaml:"listen"`         // MCP proxy listen address (e.g. ":9090")
+	Listen        string                     `yaml:"listen"` // MCP proxy listen address (e.g. ":9090")
 	DefaultPolicy MCPServerPolicy            `yaml:"default_policy"`
 	Servers       map[string]MCPServerPolicy `yaml:"servers"`
 	Upstreams     []MCPUpstreamConfig        `yaml:"upstreams"`

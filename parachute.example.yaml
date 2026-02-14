@@ -59,6 +59,51 @@ relay:
   # server_url: "wss://relay.parachute.io/ws"
   # api_key: "your-api-key"
 
+# SSH Execution Chaining - execute commands on remote environments through SSH
+# All commands are intercepted by the same risk_policy as local commands
+# Supports multi-hop chains via proxy_jump (A -> B -> C)
+# ssh:
+#   enabled: true
+#   defaults:
+#     command_timeout_sec: 30        # Max time for command execution
+#     connect_timeout_sec: 10        # Max time to establish SSH connection
+#     keepalive_sec: 30              # SSH keepalive interval
+#     max_idle_sec: 300              # Close idle connections after 5 minutes
+#   targets:
+#     - name: "dev-server"
+#       host: "dev.example.com"
+#       port: 22
+#       user: "deploy"
+#       auth_method: "key_file"      # Options: key_file, key, password_env, agent
+#       key_file: "/etc/parachute/ssh/dev_key"
+#       enabled: true
+#       labels:
+#         env: "development"
+#         team: "platform"
+#
+#     - name: "staging-server"
+#       host: "staging.internal"
+#       port: 22
+#       user: "deploy"
+#       auth_method: "key_file"
+#       key_file: "/etc/parachute/ssh/staging_key"
+#       proxy_jump: "dev-server"     # Chain: local -> dev-server -> staging-server
+#       enabled: true
+#       labels:
+#         env: "staging"
+#
+#     - name: "prod-bastion"
+#       host: "bastion.prod.example.com"
+#       port: 2222
+#       user: "ops"
+#       auth_method: "key"           # Key from environment variable
+#       key_env: "PROD_SSH_KEY"
+#       enabled: true
+#       max_sessions: 5
+#       labels:
+#         env: "production"
+#         role: "bastion"
+
 # MCP (Model Context Protocol) proxy configuration
 # mcp:
 #   enabled: false
