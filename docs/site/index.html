@@ -5,131 +5,291 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Parachute - The Seatbelt for Your AI Agent</title>
     <meta name="description" content="Open-source security sidecar for autonomous AI agents. Intercept, inspect, and control all traffic entering and leaving your agent container.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Ambient background -->
+    <div class="bg-glow"></div>
+    <div class="bg-grid"></div>
+
     <header>
         <nav>
-            <div class="logo">Parachute</div>
+            <div class="logo">
+                <svg class="logo-icon" width="28" height="28" viewBox="0 0 32 32" fill="none">
+                    <path d="M16 2C10 2 5 7 5 13L16 30L27 13C27 7 22 2 16 2Z" stroke="url(#logo-grad)" stroke-width="2.5" fill="none"/>
+                    <path d="M10 13C10 9.7 12.7 7 16 7C19.3 7 22 9.7 22 13" stroke="url(#logo-grad)" stroke-width="2" fill="none" stroke-linecap="round"/>
+                    <circle cx="16" cy="15" r="2" fill="url(#logo-grad)"/>
+                    <defs>
+                        <linearGradient id="logo-grad" x1="5" y1="2" x2="27" y2="30">
+                            <stop stop-color="#60a5fa"/>
+                            <stop offset="1" stop-color="#a78bfa"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span>Parachute</span>
+            </div>
             <div class="nav-links">
                 <a href="https://github.com/dylanp12/parachute">GitHub</a>
                 <a href="https://github.com/dylanp12/parachute/tree/main/docs">Docs</a>
-                <a href="#waitlist" class="btn-primary">Join Waitlist</a>
+                <a href="#waitlist" class="btn-nav">Join Waitlist</a>
             </div>
+            <button class="mobile-toggle" aria-label="Menu">
+                <span></span><span></span><span></span>
+            </button>
         </nav>
     </header>
 
     <main>
+        <!-- Hero -->
         <section class="hero">
-            <h1>The Seatbelt for Your AI Agent</h1>
+            <div class="hero-badge">Open Source Security Sidecar</div>
+            <h1>The Seatbelt for<br>Your AI Agent</h1>
             <p class="hero-subtitle">
-                Open-source security sidecar that intercepts all traffic entering and leaving
-                your AI agent container. Authentication, egress control, command interception,
-                PII detection, and human-in-the-loop approval — in one drop-in proxy.
+                Drop-in proxy that intercepts all traffic entering and leaving your AI agent container.
+                Authentication, egress control, command interception, PII detection, and human-in-the-loop approval.
             </p>
             <div class="hero-actions">
                 <div class="install-box">
+                    <span class="install-prompt">$</span>
                     <code>docker pull parachutesecurity/parachute:latest</code>
+                    <button class="copy-btn" onclick="navigator.clipboard.writeText('docker pull parachutesecurity/parachute:latest')" title="Copy">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+                    </button>
                 </div>
-                <a href="https://github.com/parachute-security/parachute" class="btn-secondary">View on GitHub</a>
+                <div class="hero-btns">
+                    <a href="https://github.com/dylanp12/parachute" class="btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                        View on GitHub
+                    </a>
+                    <a href="#quickstart" class="btn-secondary">Quick Start</a>
+                </div>
             </div>
         </section>
 
-        <section class="architecture">
-            <h2>How It Works</h2>
-            <div class="arch-diagram">
-                <pre>
-Internet ──► Parachute (:8080 reverse proxy) ──► Agent Container (isolated)
-                  │
-           Forward Proxy (:8888) ◄── Agent egress traffic
-                  │
-            Dashboard (approve/deny commands)
-                </pre>
+        <!-- Architecture -->
+        <section class="architecture" id="architecture">
+            <h2 class="section-title">How It Works</h2>
+            <p class="section-desc">Parachute runs as a sidecar container. Your agent has no direct internet access &mdash; all traffic flows through Parachute for inspection and control.</p>
+            <div class="arch-visual">
+                <div class="arch-node arch-internet">
+                    <div class="arch-node-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+                    </div>
+                    <span>Internet</span>
+                </div>
+                <div class="arch-arrow">
+                    <svg width="40" height="12" viewBox="0 0 40 12"><path d="M0 6h34m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="arch-node arch-parachute">
+                    <div class="arch-node-icon parachute-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <span>Parachute</span>
+                    <small>:8080 reverse proxy</small>
+                    <small>:8888 forward proxy</small>
+                </div>
+                <div class="arch-arrow">
+                    <svg width="40" height="12" viewBox="0 0 40 12"><path d="M0 6h34m0 0l-6-5m6 5l-6 5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </div>
+                <div class="arch-node arch-agent">
+                    <div class="arch-node-icon">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                    </div>
+                    <span>Agent Container</span>
+                    <small>Isolated network</small>
+                </div>
+                <div class="arch-dashboard">
+                    <div class="arch-arrow-down">
+                        <svg width="12" height="32" viewBox="0 0 12 32"><path d="M6 0v26m0 0l-5-6m5 6l5-6" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </div>
+                    <div class="arch-node arch-dash-node">
+                        <div class="arch-node-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                        </div>
+                        <span>Dashboard</span>
+                        <small>Approve / Deny</small>
+                    </div>
+                </div>
             </div>
-            <p class="arch-desc">
-                Parachute runs as a sidecar container. Your agent container has no direct internet access —
-                all traffic flows through Parachute for inspection and control.
-            </p>
         </section>
 
-        <section class="features">
-            <h2>Security Features</h2>
+        <!-- Features -->
+        <section class="features" id="features">
+            <h2 class="section-title">Security Features</h2>
+            <p class="section-desc">Everything you need to run AI agents safely in production.</p>
             <div class="feature-grid">
-                <div class="feature">
+                <div class="feature-card">
+                    <div class="feature-icon" style="--icon-color: #60a5fa;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M18 12H6M12 6v12"/></svg>
+                    </div>
                     <h3>Egress Control</h3>
                     <p>Domain whitelist with wildcard support. Only allow your agent to reach approved APIs and services.</p>
                 </div>
-                <div class="feature">
+                <div class="feature-card">
+                    <div class="feature-icon" style="--icon-color: #f472b6;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
                     <h3>Command Interception</h3>
                     <p>Regex-based policy engine blocks dangerous commands and fork bombs. Shell wrapper unwrapping defeats evasion.</p>
                 </div>
-                <div class="feature">
+                <div class="feature-card">
+                    <div class="feature-icon" style="--icon-color: #34d399;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4-4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                    </div>
                     <h3>Human-in-the-Loop</h3>
                     <p>Risky commands pause for human approval via web dashboard. Configurable timeout with persistent queue.</p>
                 </div>
-                <div class="feature">
+                <div class="feature-card">
+                    <div class="feature-icon" style="--icon-color: #fbbf24;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </div>
                     <h3>PII Detection</h3>
                     <p>Blocks exfiltration of credit cards, AWS keys, private keys, and GitHub tokens in outbound traffic.</p>
                 </div>
-                <div class="feature">
+                <div class="feature-card">
+                    <div class="feature-icon" style="--icon-color: #a78bfa;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+                    </div>
                     <h3>MCP Gateway</h3>
                     <p>Native Model Context Protocol support. Inspect, policy-gate, and audit MCP tool calls between clients and servers.</p>
                 </div>
-                <div class="feature">
+                <div class="feature-card">
+                    <div class="feature-icon" style="--icon-color: #fb923c;">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    </div>
                     <h3>Audit Logging</h3>
                     <p>Structured JSON audit trail with correlation IDs. Prometheus metrics for monitoring. Full observability.</p>
                 </div>
             </div>
         </section>
 
-        <section class="quickstart">
-            <h2>Try It in 30 Seconds</h2>
+        <!-- Quick Start -->
+        <section class="quickstart" id="quickstart">
+            <h2 class="section-title">Try It in 30 Seconds</h2>
+            <p class="section-desc">Clone, launch, and see every security feature in action with a live agent simulator.</p>
             <div class="code-block">
-                <pre><code># Clone and run the interactive demo
-git clone https://github.com/parachute-security/parachute.git
-cd parachute
-docker compose -f docker-compose.demo.yml up --build
+                <div class="code-header">
+                    <div class="code-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <span class="code-title">Terminal</span>
+                </div>
+                <pre><code><span class="code-comment"># Clone and run the interactive demo</span>
+<span class="code-prompt">$</span> git clone https://github.com/dylanp12/parachute.git
+<span class="code-prompt">$</span> cd parachute
+<span class="code-prompt">$</span> docker compose -f docker-compose.demo.yml up --build
 
-# Visit http://localhost:8080/dashboard/
-# Username: admin | Password: demo</code></pre>
+<span class="code-comment"># Visit http://localhost:8080/dashboard/</span>
+<span class="code-comment"># Username: admin | Password: demo</span></code></pre>
             </div>
-            <p>The demo includes an agent simulator that generates security events — blocked commands,
-               approval requests, egress violations, and PII detection — so you can see every feature in action.</p>
+            <p class="quickstart-note">The demo includes an agent simulator that generates security events &mdash; blocked commands, approval requests, egress violations, and PII detection &mdash; so you can see every feature in action.</p>
         </section>
 
-        <section class="frameworks">
-            <h2>Framework Agnostic</h2>
-            <p>Works with any AI agent framework. Parachute operates at the network layer, so it protects
-               your agent regardless of the framework.</p>
-            <div class="framework-list">
-                <span>Claude Code</span>
-                <span>OpenAI Codex</span>
-                <span>LangChain</span>
-                <span>CrewAI</span>
-                <span>AutoGen</span>
-                <span>Custom Agents</span>
+        <!-- Frameworks -->
+        <section class="frameworks" id="frameworks">
+            <h2 class="section-title">Framework Agnostic</h2>
+            <p class="section-desc">Parachute operates at the network layer, so it protects your agent regardless of the framework.</p>
+            <div class="framework-grid">
+                <div class="framework-item">
+                    <span class="fw-name">Claude Code</span>
+                </div>
+                <div class="framework-item">
+                    <span class="fw-name">OpenAI Codex</span>
+                </div>
+                <div class="framework-item">
+                    <span class="fw-name">LangChain</span>
+                </div>
+                <div class="framework-item">
+                    <span class="fw-name">CrewAI</span>
+                </div>
+                <div class="framework-item">
+                    <span class="fw-name">AutoGen</span>
+                </div>
+                <div class="framework-item">
+                    <span class="fw-name">Custom Agents</span>
+                </div>
             </div>
         </section>
 
+        <!-- Waitlist -->
         <section class="waitlist" id="waitlist">
-            <h2>Parachute Pro</h2>
-            <p>Coming soon: cloud relay for mobile HITL approvals, fleet management dashboard,
-               SIEM integration, and EU AI Act compliance reporting.</p>
-            <p>Join the waitlist to get early access:</p>
-            <form class="waitlist-form" action="https://formspree.io/f/parachute-waitlist" method="POST">
-                <input type="email" name="email" placeholder="your@email.com" required>
-                <button type="submit" class="btn-primary">Join Waitlist</button>
-            </form>
+            <div class="waitlist-card">
+                <h2>Parachute Pro</h2>
+                <p>Coming soon: cloud relay for mobile HITL approvals, fleet management dashboard, SIEM integration, and EU AI Act compliance reporting.</p>
+                <form class="waitlist-form" action="https://formspree.io/f/parachute-waitlist" method="POST">
+                    <div class="form-row">
+                        <input type="email" name="email" placeholder="you@company.com" required>
+                        <button type="submit" class="btn-primary">Join Waitlist</button>
+                    </div>
+                </form>
+            </div>
         </section>
     </main>
 
     <footer>
-        <p>Parachute is open source under the MIT License.</p>
-        <p>
-            <a href="https://github.com/parachute-security/parachute">GitHub</a> &middot;
-            <a href="https://github.com/parachute-security/parachute/tree/main/docs">Documentation</a> &middot;
-            <a href="https://github.com/parachute-security/parachute/blob/main/SECURITY.md">Security Policy</a>
-        </p>
+        <div class="footer-inner">
+            <div class="footer-brand">
+                <svg class="logo-icon" width="20" height="20" viewBox="0 0 32 32" fill="none">
+                    <path d="M16 2C10 2 5 7 5 13L16 30L27 13C27 7 22 2 16 2Z" stroke="url(#logo-grad2)" stroke-width="2.5" fill="none"/>
+                    <circle cx="16" cy="15" r="2" fill="url(#logo-grad2)"/>
+                    <defs>
+                        <linearGradient id="logo-grad2" x1="5" y1="2" x2="27" y2="30">
+                            <stop stop-color="#60a5fa"/>
+                            <stop offset="1" stop-color="#a78bfa"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <span>Parachute</span>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/dylanp12/parachute">GitHub</a>
+                <a href="https://github.com/dylanp12/parachute/tree/main/docs">Documentation</a>
+                <a href="https://github.com/dylanp12/parachute/blob/main/SECURITY.md">Security Policy</a>
+            </div>
+            <p class="footer-copy">Open source under the MIT License.</p>
+        </div>
     </footer>
+
+    <script>
+        // Scroll-triggered fade-in animations
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+        document.querySelectorAll('section, .feature-card, .framework-item, .arch-node').forEach(el => {
+            el.classList.add('fade-in');
+            observer.observe(el);
+        });
+
+        // Mobile nav toggle
+        const toggle = document.querySelector('.mobile-toggle');
+        const navLinks = document.querySelector('.nav-links');
+        if (toggle) {
+            toggle.addEventListener('click', () => {
+                navLinks.classList.toggle('open');
+                toggle.classList.toggle('active');
+            });
+        }
+
+        // Smooth scroll for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(a => {
+            a.addEventListener('click', e => {
+                e.preventDefault();
+                const target = document.querySelector(a.getAttribute('href'));
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (navLinks.classList.contains('open')) {
+                    navLinks.classList.remove('open');
+                    toggle.classList.remove('active');
+                }
+            });
+        });
+    </script>
 </body>
 </html>
