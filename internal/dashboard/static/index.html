@@ -12,6 +12,7 @@
             --accent: #6366f1;
             --danger: #ef4444;
             --success: #22c55e;
+            --warning: #f59e0b;
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --border: #2d2d36;
@@ -28,7 +29,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 3rem;
+            margin-bottom: 2rem;
             padding-bottom: 1.5rem;
             border-bottom: 1px solid var(--border);
         }
@@ -56,6 +57,31 @@
         }
         .status-dot.disconnected { background: var(--danger); animation: none; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        /* Tab navigation */
+        .tabs {
+            display: flex; gap: 0;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            font-weight: 500;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s ease;
+            background: none; border-top: none; border-left: none; border-right: none;
+        }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
         .section-title {
             display: flex; align-items: center; gap: 0.5rem;
             margin-bottom: 1.5rem;
@@ -63,7 +89,7 @@
             font-size: 0.875rem; font-weight: 500;
             text-transform: uppercase; letter-spacing: 0.05em;
         }
-        .pending-count {
+        .pending-count, .ssh-count {
             background: var(--accent); color: white;
             padding: 0.125rem 0.5rem; border-radius: 1rem; font-size: 0.75rem;
         }
@@ -75,15 +101,15 @@
         .empty-state-icon { font-size: 3rem; margin-bottom: 1rem; }
         .empty-state h3 { margin-bottom: 0.5rem; }
         .empty-state p { color: var(--text-secondary); font-size: 0.875rem; }
-        .command-card {
+        .command-card, .ssh-card {
             background: var(--bg-card);
             border-radius: 12px; padding: 1.5rem;
             margin-bottom: 1rem; border: 1px solid var(--border);
             transition: all 0.2s ease;
         }
-        .command-card:hover { border-color: var(--accent); }
-        .command-header {
-            display: flex; justify-content: space-between; margin-bottom: 1rem;
+        .command-card:hover, .ssh-card:hover { border-color: var(--accent); }
+        .command-header, .ssh-header {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;
         }
         .command-id {
             font-family: monospace; font-size: 0.75rem;
@@ -104,7 +130,7 @@
             display: flex; align-items: center; gap: 0.5rem;
             font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem;
         }
-        .command-reason::before { content: '⚠️'; }
+        .command-reason::before { content: '\26A0\FE0F'; }
         .command-actions { display: flex; gap: 0.75rem; }
         .btn {
             flex: 1; padding: 0.75rem 1.5rem;
@@ -115,8 +141,47 @@
         }
         .btn-approve { background: var(--success); color: white; }
         .btn-deny { background: var(--danger); color: white; }
+        .btn-connect { background: var(--accent); color: white; }
+        .btn-disconnect { background: var(--warning); color: #1a1a20; }
+        .btn-test { background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); }
+        .btn-sm { flex: none; padding: 0.5rem 1rem; font-size: 0.8rem; }
         .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* SSH target styles */
+        .ssh-name {
+            font-weight: 600; font-size: 1rem;
+            display: flex; align-items: center; gap: 0.5rem;
+        }
+        .ssh-connection-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+        }
+        .ssh-connection-dot.connected { background: var(--success); }
+        .ssh-connection-dot.disconnected { background: var(--text-secondary); }
+        .ssh-details {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.75rem; margin-bottom: 1rem;
+        }
+        .ssh-detail {
+            font-size: 0.8rem; color: var(--text-secondary);
+        }
+        .ssh-detail strong { color: var(--text-primary); }
+        .ssh-chain {
+            font-family: monospace; font-size: 0.8rem;
+            background: var(--bg-primary); padding: 0.5rem 0.75rem;
+            border-radius: 6px; border: 1px solid var(--border);
+            margin-bottom: 1rem; color: var(--accent);
+        }
+        .ssh-labels {
+            display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;
+        }
+        .ssh-label {
+            font-size: 0.7rem; padding: 0.2rem 0.5rem;
+            background: var(--bg-secondary); border-radius: 4px;
+            color: var(--text-secondary);
+        }
+        .ssh-actions { display: flex; gap: 0.5rem; }
+
         .toast {
             position: fixed; bottom: 2rem; right: 2rem;
             padding: 1rem 1.5rem;
@@ -137,7 +202,7 @@
     <div class="container">
         <header>
             <div class="logo">
-                <div class="logo-icon">🪂</div>
+                <div class="logo-icon"></div>
                 <h1>Parachute</h1>
             </div>
             <div class="status-badge">
@@ -146,16 +211,34 @@
             </div>
         </header>
 
-        <div class="section-title">
-            <span>Pending Commands</span>
-            <span class="pending-count" id="pendingCount">0</span>
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('commands')">
+                Pending Commands <span class="pending-count" id="pendingCount">0</span>
+            </button>
+            <button class="tab" onclick="switchTab('ssh')">
+                SSH Targets <span class="ssh-count" id="sshCount">0</span>
+            </button>
         </div>
 
-        <div id="commandList">
-            <div class="empty-state">
-                <div class="empty-state-icon">✓</div>
-                <h3>All Clear</h3>
-                <p>No commands pending approval</p>
+        <!-- Commands Tab -->
+        <div id="tab-commands" class="tab-content active">
+            <div id="commandList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#10003;</div>
+                    <h3>All Clear</h3>
+                    <p>No commands pending approval</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- SSH Targets Tab -->
+        <div id="tab-ssh" class="tab-content">
+            <div id="sshList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#8669;</div>
+                    <h3>No SSH Targets</h3>
+                    <p>SSH execution chaining is not configured or no targets are registered</p>
+                </div>
             </div>
         </div>
 
@@ -168,8 +251,18 @@
 
     <script>
         let pendingCommands = [];
+        let sshConnections = [];
         let csrfToken = null;
         let connected = true;
+        let activeTab = 'commands';
+
+        function switchTab(tab) {
+            activeTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector(`[onclick="switchTab('${tab}')"]`).classList.add('active');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+        }
 
         // Get CSRF token from cookie
         function getCSRFToken() {
@@ -180,28 +273,43 @@
                     return value;
                 }
             }
-            return csrfToken; // Fallback to token from API response
+            return csrfToken;
         }
 
         async function fetchPending() {
             try {
-                const response = await fetch('/api/pending', {
-                    credentials: 'same-origin'
-                });
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
+                const response = await fetch('/api/pending', { credentials: 'same-origin' });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 pendingCommands = data.pending || [];
-                // Store CSRF token if provided in response
-                if (data.csrf_token) {
-                    csrfToken = data.csrf_token;
-                }
+                if (data.csrf_token) csrfToken = data.csrf_token;
                 setConnected(true);
-                render();
+                renderCommands();
             } catch (err) {
                 console.error('Failed to fetch pending:', err);
                 setConnected(false);
+            }
+        }
+
+        async function fetchSSHConnections() {
+            try {
+                const response = await fetch('/api/ssh/connections', { credentials: 'same-origin' });
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        // SSH not enabled
+                        sshConnections = [];
+                        renderSSH();
+                        return;
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                sshConnections = data.connections || [];
+                renderSSH();
+            } catch (err) {
+                console.error('Failed to fetch SSH connections:', err);
+                sshConnections = [];
+                renderSSH();
             }
         }
 
@@ -218,7 +326,7 @@
             }
         }
 
-        function render() {
+        function renderCommands() {
             const list = document.getElementById('commandList');
             const count = document.getElementById('pendingCount');
             count.textContent = pendingCommands.length;
@@ -226,7 +334,7 @@
             if (pendingCommands.length === 0) {
                 list.innerHTML = `
                     <div class="empty-state">
-                        <div class="empty-state-icon">✓</div>
+                        <div class="empty-state-icon">&#10003;</div>
                         <h3>All Clear</h3>
                         <p>No commands pending approval</p>
                     </div>
@@ -237,17 +345,87 @@
             list.innerHTML = pendingCommands.map(cmd => `
                 <div class="command-card" id="card-${cmd.id}">
                     <div class="command-header">
-                        <span class="command-id">#${cmd.id}</span>
+                        <span class="command-id">#${cmd.id}${cmd.tool_name === 'ssh_execute' ? ' (SSH)' : ''}</span>
                         <span class="command-time">${new Date(cmd.created_at).toLocaleTimeString()}</span>
                     </div>
                     <div class="command-content">${escapeHtml(cmd.command)}</div>
+                    ${cmd.args && cmd.args.target ? `<div class="ssh-chain">Target: ${escapeHtml(cmd.args.target)}</div>` : ''}
                     <div class="command-reason">${escapeHtml(cmd.reason)}</div>
                     <div class="command-actions">
-                        <button class="btn btn-approve" onclick="approve('${cmd.id}')">✓ Approve</button>
-                        <button class="btn btn-deny" onclick="deny('${cmd.id}')">✕ Deny</button>
+                        <button class="btn btn-approve" onclick="approve('${cmd.id}')">&#10003; Approve</button>
+                        <button class="btn btn-deny" onclick="deny('${cmd.id}')">&#10005; Deny</button>
                     </div>
                 </div>
             `).join('');
+        }
+
+        function renderSSH() {
+            const list = document.getElementById('sshList');
+            const count = document.getElementById('sshCount');
+            count.textContent = sshConnections.length;
+
+            if (sshConnections.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#8669;</div>
+                        <h3>No SSH Targets</h3>
+                        <p>SSH execution chaining is not configured or no targets are registered</p>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = sshConnections.map(conn => {
+                const t = conn.target;
+                const isConnected = conn.connected;
+                const labels = t.labels || {};
+                const labelHtml = Object.entries(labels).map(([k, v]) =>
+                    `<span class="ssh-label">${escapeHtml(k)}: ${escapeHtml(v)}</span>`
+                ).join('');
+
+                return `
+                <div class="ssh-card">
+                    <div class="ssh-header">
+                        <span class="ssh-name">
+                            <span class="ssh-connection-dot ${isConnected ? 'connected' : 'disconnected'}"></span>
+                            ${escapeHtml(t.name)}
+                        </span>
+                        <span class="command-time">${isConnected ? 'Connected ' + timeAgo(conn.connected_at) : (t.enabled ? 'Disconnected' : 'Disabled')}</span>
+                    </div>
+                    <div class="ssh-details">
+                        <div class="ssh-detail"><strong>Host:</strong> ${escapeHtml(t.host)}:${t.port || 22}</div>
+                        <div class="ssh-detail"><strong>User:</strong> ${escapeHtml(t.user)}</div>
+                        <div class="ssh-detail"><strong>Auth:</strong> ${escapeHtml(t.auth_method)}</div>
+                        ${t.proxy_jump ? `<div class="ssh-detail"><strong>Jump:</strong> ${escapeHtml(t.proxy_jump)}</div>` : ''}
+                        ${isConnected ? `<div class="ssh-detail"><strong>Sessions:</strong> ${conn.session_count}</div>` : ''}
+                    </div>
+                    ${labelHtml ? `<div class="ssh-labels">${labelHtml}</div>` : ''}
+                    <div class="ssh-actions">
+                        ${isConnected
+                            ? `<button class="btn btn-disconnect btn-sm" onclick="sshDisconnect('${t.name}')">Disconnect</button>
+                               <button class="btn btn-test btn-sm" onclick="sshTest('${t.name}')">Test</button>`
+                            : (t.enabled
+                                ? `<button class="btn btn-connect btn-sm" onclick="sshConnect('${t.name}')">Connect</button>`
+                                : `<button class="btn btn-sm" disabled>Disabled</button>`)
+                        }
+                        <button class="btn btn-test btn-sm" onclick="sshViewChain('${t.name}')">View Chain</button>
+                    </div>
+                </div>
+                `;
+            }).join('');
+        }
+
+        function timeAgo(dateStr) {
+            if (!dateStr) return '';
+            const now = new Date();
+            const then = new Date(dateStr);
+            const diffMs = now - then;
+            const diffMin = Math.floor(diffMs / 60000);
+            if (diffMin < 1) return 'just now';
+            if (diffMin < 60) return diffMin + 'm ago';
+            const diffHr = Math.floor(diffMin / 60);
+            if (diffHr < 24) return diffHr + 'h ago';
+            return Math.floor(diffHr / 24) + 'd ago';
         }
 
         async function approve(id) { await handleAction(id, 'approve'); }
@@ -260,18 +438,11 @@
 
             try {
                 const token = getCSRFToken();
-                const headers = {
-                    'Content-Type': 'application/json'
-                };
-                // Include CSRF token in header if available
-                if (token) {
-                    headers['X-CSRF-Token'] = token;
-                }
+                const headers = { 'Content-Type': 'application/json' };
+                if (token) headers['X-CSRF-Token'] = token;
 
                 const response = await fetch(`/api/${action}/${id}`, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: headers
+                    method: 'POST', credentials: 'same-origin', headers: headers
                 });
 
                 if (!response.ok) {
@@ -283,7 +454,7 @@
                 if (data.success) {
                     showToast(`Command ${action === 'approve' ? 'approved' : 'denied'}: #${id}`);
                     pendingCommands = pendingCommands.filter(cmd => cmd.id !== id);
-                    render();
+                    renderCommands();
                 }
             } catch (err) {
                 console.error(`Failed to ${action}:`, err);
@@ -292,22 +463,97 @@
             }
         }
 
+        async function sshConnect(name) {
+            try {
+                const response = await fetch(`/api/ssh/connect/${name}`, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    showToast(`Connected to ${name} via ${(data.chain || []).join(' -> ')}`);
+                    fetchSSHConnections();
+                } else {
+                    showToast(`Failed: ${data.error}`, true);
+                }
+            } catch (err) {
+                showToast(`Error: ${err.message}`, true);
+            }
+        }
+
+        async function sshDisconnect(name) {
+            try {
+                const response = await fetch(`/api/ssh/disconnect/${name}`, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    showToast(`Disconnected from ${name}`);
+                    fetchSSHConnections();
+                } else {
+                    showToast(`Failed: ${data.error}`, true);
+                }
+            } catch (err) {
+                showToast(`Error: ${err.message}`, true);
+            }
+        }
+
+        async function sshTest(name) {
+            showToast(`Testing connection to ${name}...`);
+            try {
+                const response = await fetch(`/api/ssh/test/${name}`, {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showToast(`Connection test passed for ${name}`);
+                } else {
+                    showToast(`Test failed: ${data.error}`, true);
+                }
+            } catch (err) {
+                showToast(`Error: ${err.message}`, true);
+            }
+        }
+
+        async function sshViewChain(name) {
+            try {
+                const response = await fetch(`/api/ssh/chain/${name}`, { credentials: 'same-origin' });
+                const data = await response.json();
+                if (response.ok) {
+                    const chainStr = (data.chain || []).map(h =>
+                        `${h.name} (${h.user || ''}@${h.host || ''}:${h.port || 22})${h.is_jump ? ' [jump]' : ' [target]'}`
+                    ).join(' -> ');
+                    showToast(`Chain: ${chainStr}`);
+                } else {
+                    showToast(`Error: ${data.error}`, true);
+                }
+            } catch (err) {
+                showToast(`Error: ${err.message}`, true);
+            }
+        }
+
         function showToast(message, isError = false) {
             const toast = document.getElementById('toast');
             toast.textContent = message;
             toast.className = 'toast' + (isError ? ' error' : '');
             toast.style.display = 'block';
-            setTimeout(() => toast.style.display = 'none', 3000);
+            setTimeout(() => toast.style.display = 'none', 4000);
         }
 
         function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
             const div = document.createElement('div');
-            div.textContent = text;
+            div.textContent = String(text);
             return div.innerHTML;
         }
 
+        // Poll both APIs
         setInterval(fetchPending, 3000);
+        setInterval(fetchSSHConnections, 5000);
         fetchPending();
+        fetchSSHConnections();
     </script>
 </body>
 </html>

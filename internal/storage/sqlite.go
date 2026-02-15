@@ -74,6 +74,26 @@ func NewStore(dbPath string) (*Store, error) {
 	CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_audit_command_id ON audit_log(command_id);
 	CREATE INDEX IF NOT EXISTS idx_audit_correlation_id ON audit_log(correlation_id);
+
+	CREATE TABLE IF NOT EXISTS ssh_executions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		correlation_id TEXT NOT NULL,
+		target_name TEXT NOT NULL,
+		command TEXT NOT NULL,
+		exit_code INTEGER NOT NULL,
+		stdout TEXT,
+		stderr TEXT,
+		error TEXT,
+		chain TEXT,
+		duration_ns INTEGER,
+		pii_detected BOOLEAN NOT NULL DEFAULT 0,
+		output_truncated BOOLEAN NOT NULL DEFAULT 0,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_ssh_exec_target ON ssh_executions(target_name);
+	CREATE INDEX IF NOT EXISTS idx_ssh_exec_correlation ON ssh_executions(correlation_id);
+	CREATE INDEX IF NOT EXISTS idx_ssh_exec_created ON ssh_executions(created_at);
 	`
 
 	if _, err := db.Exec(schema); err != nil {
@@ -319,6 +339,93 @@ func (s *Store) LogEvent(event *AuditEvent) error {
 	}
 
 	return nil
+}
+
+// SSHExecution represents a stored SSH command execution record
+type SSHExecution struct {
+	ID              int64     `json:"id"`
+	CorrelationID   string    `json:"correlation_id"`
+	TargetName      string    `json:"target_name"`
+	Command         string    `json:"command"`
+	ExitCode        int       `json:"exit_code"`
+	Stdout          string    `json:"stdout,omitempty"`
+	Stderr          string    `json:"stderr,omitempty"`
+	Error           string    `json:"error,omitempty"`
+	Chain           string    `json:"chain,omitempty"`
+	DurationNs      int64     `json:"duration_ns"`
+	PIIDetected     bool      `json:"pii_detected"`
+	OutputTruncated bool      `json:"output_truncated"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+// StoreSSHExecution persists an SSH execution result
+func (s *Store) StoreSSHExecution(exec *SSHExecution) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`
+		INSERT INTO ssh_executions (correlation_id, target_name, command, exit_code, stdout, stderr, error, chain, duration_ns, pii_detected, output_truncated, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, exec.CorrelationID, exec.TargetName, exec.Command, exec.ExitCode,
+		exec.Stdout, exec.Stderr, exec.Error, exec.Chain, exec.DurationNs,
+		exec.PIIDetected, exec.OutputTruncated, exec.CreatedAt)
+
+	if err != nil {
+		return fmt.Errorf("failed to store SSH execution: %w", err)
+	}
+	return nil
+}
+
+// ListSSHExecutions retrieves SSH execution history, optionally filtered by target
+func (s *Store) ListSSHExecutions(target string, limit int) ([]*SSHExecution, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var rows *sql.Rows
+	var err error
+
+	if target != "" {
+		rows, err = s.db.Query(`
+			SELECT id, correlation_id, target_name, command, exit_code, stdout, stderr, error, chain, duration_ns, pii_detected, output_truncated, created_at
+			FROM ssh_executions
+			WHERE target_name = ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		`, target, limit)
+	} else {
+		rows, err = s.db.Query(`
+			SELECT id, correlation_id, target_name, command, exit_code, stdout, stderr, error, chain, duration_ns, pii_detected, output_truncated, created_at
+			FROM ssh_executions
+			ORDER BY created_at DESC
+			LIMIT ?
+		`, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list SSH executions: %w", err)
+	}
+	defer rows.Close()
+
+	var result []*SSHExecution
+	for rows.Next() {
+		exec := &SSHExecution{}
+		var stdout, stderr, execErr, chain sql.NullString
+
+		err := rows.Scan(&exec.ID, &exec.CorrelationID, &exec.TargetName, &exec.Command,
+			&exec.ExitCode, &stdout, &stderr, &execErr, &chain,
+			&exec.DurationNs, &exec.PIIDetected, &exec.OutputTruncated, &exec.CreatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan SSH execution row: %w", err)
+		}
+
+		exec.Stdout = stdout.String
+		exec.Stderr = stderr.String
+		exec.Error = execErr.String
+		exec.Chain = chain.String
+
+		result = append(result, exec)
+	}
+
+	return result, nil
 }
 
 // GetAuditLog retrieves recent audit events

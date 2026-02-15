@@ -114,6 +114,7 @@ func (i *Interceptor) extractCommand(tc *ToolCall) string {
 	execToolNames := map[string]bool{
 		"execute_bash": true, "run_command": true, "bash": true,
 		"shell": true, "terminal": true, "execute": true, "run": true, "command": true,
+		"ssh_execute": true, "ssh": true, "remote_execute": true, "ssh_run": true, "ssh_command": true,
 	}
 
 	// Check both exact match and lowercase
