@@ -132,3 +132,58 @@ func TestPIIDetection(t *testing.T) {
 		}
 	}
 }
+
+func TestReverseProxyToolInterceptionDefaultsFalse(t *testing.T) {
+	content := `
+listen: ":8080"
+auth:
+  allow_insecure: true
+`
+	tmpFile, err := os.CreateTemp("", "parachute-*.yaml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		t.Fatalf("Failed to write temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	cfg, err := Load(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+	if cfg.ReverseProxy.ToolInterception.Enabled {
+		t.Error("tool interception should default to false")
+	}
+}
+
+func TestReverseProxyToolInterceptionExplicitTrue(t *testing.T) {
+	content := `
+listen: ":8080"
+auth:
+  allow_insecure: true
+reverse_proxy:
+  tool_interception:
+    enabled: true
+`
+	tmpFile, err := os.CreateTemp("", "parachute-*.yaml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		t.Fatalf("Failed to write temp file: %v", err)
+	}
+	tmpFile.Close()
+
+	cfg, err := Load(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+	if !cfg.ReverseProxy.ToolInterception.Enabled {
+		t.Error("tool interception should be true when explicitly set")
+	}
+}

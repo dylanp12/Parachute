@@ -5,6 +5,13 @@
 # - docs/openclaw-integration.md - OpenClaw gateway setup
 # - docs/pii-detection.md - PII scanning limitations and recommendations
 
+# DEPRECATED: Reverse proxy tool interception
+# The reverse proxy still forwards HTTP traffic but no longer intercepts tool calls by default.
+# Use the MCP gateway (mcp.enabled=true) for tool-call policy enforcement.
+# reverse_proxy:
+#   tool_interception:
+#     enabled: false  # default; set true only for legacy compatibility
+
 auth:
   username: "admin"
   password_env: "PARACHUTE_PASSWORD"  # Read password from this env var
@@ -97,6 +104,6 @@ storage:
   path: "/var/lib/parachute/parachute.db"  # Required if type is "sqlite"
 
 # Server configuration
-upstream: "http://openclaw:3000"    # Agent container address
+upstream: "http://openclaw:3000"    # Agent container address (used for all reverse proxy forwarding)
 listen: ":8080"                     # Main API/Dashboard port
 proxy_listen: ":8888"               # Forward proxy port for agent egress

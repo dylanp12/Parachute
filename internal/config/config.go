@@ -9,19 +9,30 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ReverseProxyConfig controls the reverse proxy behavior
+type ReverseProxyConfig struct {
+	ToolInterception ToolInterceptionConfig `yaml:"tool_interception"`
+}
+
+// ToolInterceptionConfig controls tool-call interception in the reverse proxy
+type ToolInterceptionConfig struct {
+	Enabled bool `yaml:"enabled"` // default false
+}
+
 // Config is the root configuration structure
 type Config struct {
-	Auth        AuthConfig       `yaml:"auth"`
-	RiskPolicy  RiskPolicyConfig `yaml:"risk_policy"`
-	Egress      EgressConfig     `yaml:"egress"`
-	Relay       RelayConfig      `yaml:"relay"`
-	Storage     StorageConfig    `yaml:"storage"`
-	MCP         MCPConfig        `yaml:"mcp"`
-	Webhooks    []WebhookConfig  `yaml:"webhooks"`
-	License     LicenseConfig    `yaml:"license"`
-	Upstream    string           `yaml:"upstream"`
-	Listen      string           `yaml:"listen"`
-	ProxyListen string           `yaml:"proxy_listen"` // Forward proxy listen address for agent egress
+	Auth         AuthConfig         `yaml:"auth"`
+	RiskPolicy   RiskPolicyConfig   `yaml:"risk_policy"`
+	Egress       EgressConfig       `yaml:"egress"`
+	Relay        RelayConfig        `yaml:"relay"`
+	Storage      StorageConfig      `yaml:"storage"`
+	MCP          MCPConfig          `yaml:"mcp"`
+	ReverseProxy ReverseProxyConfig `yaml:"reverse_proxy"`
+	Webhooks     []WebhookConfig    `yaml:"webhooks"`
+	License      LicenseConfig      `yaml:"license"`
+	Upstream     string             `yaml:"upstream"`
+	Listen       string             `yaml:"listen"`
+	ProxyListen  string             `yaml:"proxy_listen"` // Forward proxy listen address for agent egress
 }
 
 // MCPConfig defines Model Context Protocol proxy settings

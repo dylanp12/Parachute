@@ -80,23 +80,25 @@ func (p *Proxy) Handler() fiber.Handler {
 			}
 		}
 
-		// Check for OpenClaw tools/invoke endpoint
-		path := c.Path()
-		if strings.HasSuffix(path, "/tools/invoke") || strings.Contains(path, "/tools/invoke") {
-			return p.handleOpenClawToolInvoke(c, body)
-		}
-
-		// Try to intercept tool calls
-		if len(body) > 0 {
-			blocked, err := p.checkToolCalls(c.Context(), body)
-			if err != nil {
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		if p.cfg.ReverseProxy.ToolInterception.Enabled {
+			// Check for OpenClaw tools/invoke endpoint
+			path := c.Path()
+			if strings.HasSuffix(path, "/tools/invoke") || strings.Contains(path, "/tools/invoke") {
+				return p.handleOpenClawToolInvoke(c, body)
 			}
-			if blocked {
-				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-					"error":  "command blocked by policy",
-					"reason": "command matches block list or was denied",
-				})
+
+			// Try to intercept tool calls
+			if len(body) > 0 {
+				blocked, err := p.checkToolCalls(c.Context(), body)
+				if err != nil {
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+				}
+				if blocked {
+					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+						"error":  "command blocked by policy",
+						"reason": "command matches block list or was denied",
+					})
+				}
 			}
 		}
 

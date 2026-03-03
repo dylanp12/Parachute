@@ -63,6 +63,13 @@ func main() {
 	log.Infof("Forward Proxy: %s", cfg.ProxyListen)
 	log.Infof("Storage: %s", cfg.Storage.Type)
 
+	// M0: Reverse proxy tool interception deprecation
+	if cfg.ReverseProxy.ToolInterception.Enabled {
+		log.Warn("*** DEPRECATED: reverse_proxy.tool_interception is enabled.")
+		log.Warn("*** This mode does NOT reliably intercept tool calls from WebSocket-based agents.")
+		log.Warn("*** Migrate to the MCP gateway (mcp.enabled=true).")
+	}
+
 	// Initialize storage and approval queue
 	var approvalQ *approval.Queue
 	var store *storage.Store
