@@ -3,7 +3,7 @@ package mcp
 import (
 	"strings"
 
-	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/dylanp12/parachute/internal/interceptor"
 )
 
 // Action mirrors interceptor.Action for MCP policy decisions

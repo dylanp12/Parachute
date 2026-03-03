@@ -9,9 +9,9 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/client"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/approval"
-	"github.com/parachute-security/parachute/internal/audit"
-	"github.com/parachute-security/parachute/internal/metrics"
+	"github.com/dylanp12/parachute/internal/approval"
+	"github.com/dylanp12/parachute/internal/audit"
+	"github.com/dylanp12/parachute/internal/metrics"
 )
 
 // TelemetryHook carries event data for telemetry emission.

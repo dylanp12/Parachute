@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/parachute-security/parachute/internal/audit"
-	"github.com/parachute-security/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/audit"
+	"github.com/dylanp12/parachute/internal/config"
 )
 
 // CorrelationID creates middleware that adds a correlation ID to each request

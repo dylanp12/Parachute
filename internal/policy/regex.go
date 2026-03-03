@@ -3,7 +3,7 @@ package policy
 import (
 	"context"
 
-	"github.com/parachute-security/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/config"
 )
 
 // RegexEngine wraps the existing RiskPolicyConfig behind the Engine interface.

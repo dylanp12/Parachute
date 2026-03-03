@@ -11,8 +11,8 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/config"
-	"github.com/parachute-security/parachute/internal/egress"
+	"github.com/dylanp12/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/egress"
 )
 
 // ForwardProxy handles outbound requests from the agent container

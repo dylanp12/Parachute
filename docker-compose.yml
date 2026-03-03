@@ -19,7 +19,7 @@ services:
     # ONLY Parachute exposes ports to the outside world
     ports:
       - "8080:8080"   # Main API/Dashboard
-      - "8888:8888"   # Forward proxy for agent egress
+      - "18888:8888"  # Forward proxy for agent egress (host:18888 → container:8888)
     volumes:
       - ./parachute.yaml:/etc/parachute/config.yaml:ro
     environment:
@@ -29,7 +29,7 @@ services:
       - agent-net     # Private network with agent
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
       interval: 30s
       timeout: 3s
       retries: 3
@@ -37,14 +37,18 @@ services:
 
   # OpenClaw agent - COMPLETELY ISOLATED, no direct internet access
   openclaw:
-    image: ${OPENCLAW_IMAGE:-openclaw-agent:latest}
+    image: alpine/openclaw:latest
     container_name: openclaw
     networks:
-      - agent-net     # Private network ONLY - NO internet access
-    # CRITICAL: No ports exposed - agent is only accessible via parachute
-    # This is a security requirement, not an oversight
+      - agent-net     # Private network for communication with parachute
+      - public-net    # Required for host port mapping (egress still forced through proxy)
+    # Gateway port exposed so the openclaw client can connect from the host.
+    # Egress security is enforced by HTTP_PROXY env vars → parachute forward proxy.
+    ports:
+      - "18789:18789"  # OpenClaw gateway WebSocket
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-215e65a893e0bf9463e20dc60ef2f87bc3f403919d3bca86}
       # MANDATORY: Force ALL HTTP/HTTPS traffic through Parachute proxy
       # Without these, the agent cannot reach the internet at all
       - HTTP_PROXY=http://parachute:8888
@@ -56,6 +60,7 @@ services:
       - no_proxy=localhost,127.0.0.1,parachute
     volumes:
       - ./workspace:/workspace
+      - ./openclaw.json:/home/node/.openclaw/openclaw.json
     depends_on:
       parachute:
         condition: service_healthy

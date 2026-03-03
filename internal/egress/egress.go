@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/parachute-security/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/config"
 )
 
 // Filter controls outbound requests

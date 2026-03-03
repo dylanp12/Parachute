@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/parachute-security/parachute/pkg/sdr"
+	"github.com/dylanp12/parachute/pkg/sdr"
 )
 
 func TestHTTPBatchExporterUploadsFromSpool(t *testing.T) {

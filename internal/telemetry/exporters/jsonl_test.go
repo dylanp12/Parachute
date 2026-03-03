@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/parachute-security/parachute/pkg/sdr"
+	"github.com/dylanp12/parachute/pkg/sdr"
 )
 
 func testSDR(actionType, target string) sdr.SDR {

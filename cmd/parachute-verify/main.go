@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/parachute-security/parachute/internal/audit"
+	"github.com/dylanp12/parachute/internal/audit"
 )
 
 func main() {

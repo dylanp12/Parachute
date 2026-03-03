@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/parachute-security/parachute/pkg/sdr"
+	"github.com/dylanp12/parachute/pkg/sdr"
 )
 
 // mockExporter collects exported SDRs for verification

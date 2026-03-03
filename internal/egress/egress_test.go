@@ -3,7 +3,7 @@ package egress
 import (
 	"testing"
 
-	"github.com/parachute-security/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/config"
 )
 
 func TestCheckURLStructuredRules(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/parachute-security/parachute/pkg/sdr"
+	"github.com/dylanp12/parachute/pkg/sdr"
 )
 
 // JSONLExporter writes SDR records as one-per-line JSON to a file.

@@ -3,8 +3,8 @@ package mcp
 import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/approval"
-	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/dylanp12/parachute/internal/approval"
+	"github.com/dylanp12/parachute/internal/interceptor"
 )
 
 // ServerConfig defines an upstream MCP server

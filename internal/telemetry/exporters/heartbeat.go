@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/parachute-security/parachute/pkg/sdr"
+	"github.com/dylanp12/parachute/pkg/sdr"
 )
 
 // HeartbeatConfig configures the heartbeat emitter.
