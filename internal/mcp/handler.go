@@ -265,6 +265,21 @@ func (h *Handler) handleResourcesRead(c fiber.Ctx, req *JSONRPCRequest, correlat
 	m.MCPResourceReads.Add(1)
 
 	result := h.policy.CheckResourceRead(rr, serverName)
+
+	if h.onEvent != nil {
+		decision := "allow"
+		if result.Action == ActionBlock {
+			decision = "deny"
+		}
+		h.onEvent(TelemetryHook{
+			ActionType:      "mcp_resource_read",
+			ActionTarget:    rr.URI,
+			Decision:        decision,
+			RulePath:        result.RulePath,
+			EnforcementMode: "enforce",
+		})
+	}
+
 	if result.Action == ActionBlock {
 		audit.DefaultLogger.Log(&audit.Event{
 			EventType:     audit.EventMCPResourceBlock,
