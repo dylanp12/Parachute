@@ -1,0 +1,70 @@
+# Parachute Telemetry Demo Configuration
+# Pre-configured to demonstrate telemetry pipeline with Pro
+
+auth:
+  username: "admin"
+  password_env: "PARACHUTE_PASSWORD"
+
+risk_policy:
+  block_commands:
+    - "rm -rf /"
+    - ":(){ :|:& };:"
+  require_approval:
+    - "\\brm\\b"
+    - "\\bsudo\\b"
+
+egress:
+  mode: "record"
+  rules:
+    - domains:
+        - "api.anthropic.com"
+        - "*.anthropic.com"
+        - "api.openai.com"
+      label: "llm-providers"
+      action: "allow"
+    - domains:
+        - "github.com"
+        - "*.githubusercontent.com"
+      label: "code-hosting"
+      action: "allow"
+
+  pii_patterns:
+    - "AKIA[0-9A-Z]{16}"
+
+telemetry:
+  enabled: true
+  agent_id: "demo-agent-001"
+  tenant_id: "demo-tenant"
+  chain_state_path: "/var/lib/parachute/chain_state.json"
+  jsonl:
+    path: "/var/lib/parachute/events.jsonl"
+  http:
+    url: "http://parachute-pro:8443/v1/ingest/sdr-batch"
+    api_key_env: "PARACHUTE_PRO_API_KEY"
+    batch_size: 10
+    flush_interval: "5s"
+    offset_path: "/var/lib/parachute/upload_offset"
+  heartbeat:
+    interval: "10s"
+
+mcp:
+  enabled: true
+  default_policy:
+    require_approval:
+      - "execute_bash"
+      - "run_command"
+  upstreams:
+    - name: "default"
+      url: "http://mock-mcp:3001"
+      transport: "http"
+
+relay:
+  enabled: false
+
+storage:
+  type: "sqlite"
+  path: "/var/lib/parachute/parachute.db"
+
+upstream: "http://mock-mcp:3001"
+listen: ":8080"
+proxy_listen: ":8888"
