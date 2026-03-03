@@ -31,7 +31,7 @@ type Proxy struct {
 // NewProxy creates a new MCP proxy
 func NewProxy(cfg *ProxyConfig, approvalQ *approval.Queue, notifier *approval.Notifier, cmdInterceptor *interceptor.Interceptor) *Proxy {
 	policy := NewPolicyEngine(cfg.DefaultPolicy, cfg.Servers, cmdInterceptor)
-	handler := NewHandler(policy, approvalQ, notifier)
+	handler := NewHandler(policy, approvalQ, notifier, nil)
 
 	upstreams := make(map[string]string)
 	for _, u := range cfg.Upstreams {

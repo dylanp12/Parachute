@@ -59,11 +59,12 @@ type Config struct {
 
 // MCPConfig defines Model Context Protocol proxy settings
 type MCPConfig struct {
-	Enabled       bool                       `yaml:"enabled"`
-	Listen        string                     `yaml:"listen"`         // MCP proxy listen address (e.g. ":9090")
-	DefaultPolicy MCPServerPolicy            `yaml:"default_policy"`
-	Servers       map[string]MCPServerPolicy `yaml:"servers"`
-	Upstreams     []MCPUpstreamConfig        `yaml:"upstreams"`
+	Enabled        bool                       `yaml:"enabled"`
+	Listen         string                     `yaml:"listen"`          // MCP proxy listen address (e.g. ":9090")
+	PolicyTemplate string                     `yaml:"policy_template"` // "claude-code", "restrictive", "permissive"
+	DefaultPolicy  MCPServerPolicy            `yaml:"default_policy"`
+	Servers        map[string]MCPServerPolicy `yaml:"servers"`
+	Upstreams      []MCPUpstreamConfig        `yaml:"upstreams"`
 }
 
 // MCPServerPolicy defines per-server MCP policy rules
@@ -76,8 +77,10 @@ type MCPServerPolicy struct {
 
 // MCPUpstreamConfig defines an upstream MCP server
 type MCPUpstreamConfig struct {
-	Name string `yaml:"name"`
-	URL  string `yaml:"url"`
+	Name      string `yaml:"name"`
+	URL       string `yaml:"url"`
+	Transport string `yaml:"transport"` // "http" (default) or "stdio" (not implemented)
+	Command   string `yaml:"command"`   // for stdio, stored but not used yet
 }
 
 // WebhookConfig defines a notification endpoint

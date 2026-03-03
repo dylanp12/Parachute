@@ -17,9 +17,10 @@ const (
 
 // PolicyResult represents the outcome of a policy evaluation
 type PolicyResult struct {
-	Action  Action
-	Reason  string
-	Command string // Extracted command for command-execution tools
+	Action   Action
+	Reason   string
+	Command  string // Extracted command for command-execution tools
+	RulePath string // stable identifier for this rule
 }
 
 // ServerPolicy defines per-server or default MCP policy rules
@@ -56,16 +57,18 @@ func (pe *PolicyEngine) CheckToolCall(tc *ToolCallParams, serverName string) *Po
 	// Check block list first
 	if matchesTool(tc.Name, policy.BlockTools) {
 		return &PolicyResult{
-			Action: ActionBlock,
-			Reason: "tool blocked by MCP policy: " + tc.Name,
+			Action:   ActionBlock,
+			Reason:   "tool blocked by MCP policy: " + tc.Name,
+			RulePath: "mcp/tool/block:" + tc.Name,
 		}
 	}
 
 	// If allow list is non-empty, only listed tools are permitted
 	if len(policy.AllowTools) > 0 && !matchesTool(tc.Name, policy.AllowTools) {
 		return &PolicyResult{
-			Action: ActionBlock,
-			Reason: "tool not in MCP allow list: " + tc.Name,
+			Action:   ActionBlock,
+			Reason:   "tool not in MCP allow list: " + tc.Name,
+			RulePath: "mcp/allow_list/reject:" + tc.Name,
 		}
 	}
 
@@ -79,10 +82,15 @@ func (pe *PolicyEngine) CheckToolCall(tc *ToolCallParams, serverName string) *Po
 			}
 			result := pe.cmdInterceptor.Check(toolCall)
 			if result.Action != ActionAllow {
+				actionStr := "block"
+				if result.Action == ActionPending {
+					actionStr = "pending"
+				}
 				return &PolicyResult{
-					Action:  result.Action,
-					Reason:  result.Reason,
-					Command: result.Command,
+					Action:   result.Action,
+					Reason:   result.Reason,
+					Command:  result.Command,
+					RulePath: "mcp/command/" + actionStr + ":" + cmdStr,
 				}
 			}
 		}
@@ -91,12 +99,13 @@ func (pe *PolicyEngine) CheckToolCall(tc *ToolCallParams, serverName string) *Po
 	// Check require-approval list
 	if matchesTool(tc.Name, policy.RequireApproval) {
 		return &PolicyResult{
-			Action: ActionPending,
-			Reason: "tool requires approval by MCP policy: " + tc.Name,
+			Action:   ActionPending,
+			Reason:   "tool requires approval by MCP policy: " + tc.Name,
+			RulePath: "mcp/tool/require_approval:" + tc.Name,
 		}
 	}
 
-	return &PolicyResult{Action: ActionAllow}
+	return &PolicyResult{Action: ActionAllow, RulePath: "mcp/tool/allow:" + tc.Name}
 }
 
 // CheckResourceRead evaluates a resources/read request against policy
@@ -106,13 +115,14 @@ func (pe *PolicyEngine) CheckResourceRead(rr *ResourceReadParams, serverName str
 	for _, blocked := range policy.BlockResources {
 		if matchesResource(rr.URI, blocked) {
 			return &PolicyResult{
-				Action: ActionBlock,
-				Reason: "resource blocked by MCP policy: " + rr.URI,
+				Action:   ActionBlock,
+				Reason:   "resource blocked by MCP policy: " + rr.URI,
+				RulePath: "mcp/resource/block:" + rr.URI,
 			}
 		}
 	}
 
-	return &PolicyResult{Action: ActionAllow}
+	return &PolicyResult{Action: ActionAllow, RulePath: "mcp/resource/allow:" + rr.URI}
 }
 
 func (pe *PolicyEngine) getPolicyForServer(serverName string) ServerPolicy {
