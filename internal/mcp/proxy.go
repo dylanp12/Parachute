@@ -26,6 +26,7 @@ type ProxyConfig struct {
 type Proxy struct {
 	handler   *Handler
 	upstreams map[string]string // server name → upstream URL
+	sseBroker *SSEBroker
 }
 
 // NewProxy creates a new MCP proxy
@@ -42,11 +43,15 @@ func NewProxy(cfg *ProxyConfig, approvalQ *approval.Queue, notifier *approval.No
 	return &Proxy{
 		handler:   handler,
 		upstreams: upstreams,
+		sseBroker: NewSSEBroker(100),
 	}
 }
 
 // RegisterRoutes adds MCP proxy routes to a Fiber router
 func (p *Proxy) RegisterRoutes(router fiber.Router) {
+	// SSE stream for server-to-client notifications
+	router.Get("/sse", p.sseBroker.HandleSSE)
+
 	// POST /mcp/:server — Route to specific MCP server
 	router.Post("/:server", p.proxyToServer)
 
