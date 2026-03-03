@@ -1,0 +1,50 @@
+{
+  "description": "Basic SDR with deny decision, no approval, genesis chain",
+  "sdr": {
+    "sdr_version": "1.0.0",
+    "sdr_id": "550e8400-e29b-41d4-a716-446655440000",
+    "tenant_id": "acme-corp",
+    "agent_id": "prod/billing/agent-1/default",
+    "occurred_at": "2025-01-15T10:30:00Z",
+    "received_at": "0001-01-01T00:00:00Z",
+    "action": {
+      "type": "tool_call",
+      "target": "rm -rf /tmp/cache",
+      "params": {
+        "cwd": "/app"
+      }
+    },
+    "policy": {
+      "bundle_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "version": "1.2.0",
+      "rule_path": "parachute.risk.destructive",
+      "decision": "deny",
+      "required_approvals": 0
+    },
+    "approval": null,
+    "chain": {
+      "prev_hash": "genesis",
+      "record_hash": "f36a88ecc5f743930b469157bfd6b3187563b23fa3ba089f4d797fa15d665a6f",
+      "chain_id": "prod/billing/agent-1/default"
+    },
+    "signing": {
+      "key_id": "acme-corp/sidecar/1705312000",
+      "alg": "Ed25519",
+      "signature": "G8RVPzqVHYJsZSaOfeENo14lBDOcNJavZskWPiVAxZ0EF2wU5jxfwoo3rdJwyZMrPmymwD3DDVsjlb4QFnpnDw",
+      "signing_time": "2026-03-03T20:42:44.897174099Z"
+    },
+    "runtime": {
+      "sidecar_version": "0.5.0",
+      "framework": "claude-code"
+    },
+    "telemetry": {
+      "session_id": ""
+    },
+    "enforcement": {
+      "mode": ""
+    }
+  },
+  "canonical_json": "{\"action\":{\"params\":{\"cwd\":\"/app\"},\"target\":\"rm -rf /tmp/cache\",\"type\":\"tool_call\"},\"agent_id\":\"prod/billing/agent-1/default\",\"approval\":null,\"chain\":{\"chain_id\":\"prod/billing/agent-1/default\",\"prev_hash\":\"genesis\"},\"occurred_at\":\"2025-01-15T10:30:00Z\",\"policy\":{\"bundle_hash\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\"decision\":\"deny\",\"required_approvals\":0,\"rule_path\":\"parachute.risk.destructive\",\"version\":\"1.2.0\"},\"received_at\":\"0001-01-01T00:00:00Z\",\"runtime\":{\"framework\":\"claude-code\",\"sidecar_version\":\"0.5.0\"},\"sdr_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"sdr_version\":\"1.0.0\",\"tenant_id\":\"acme-corp\"}",
+  "record_hash": "f36a88ecc5f743930b469157bfd6b3187563b23fa3ba089f4d797fa15d665a6f",
+  "public_key_hex": "05cb8f5c682b36571c2b555b6c30937913286a743adb5695c42f211acb93c42f"
+}
