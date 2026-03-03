@@ -176,10 +176,19 @@ func (r *RiskPolicyConfig) RequiresApproval(cmd string) bool {
 	return false
 }
 
+// EgressRule defines a structured egress rule with label and action.
+type EgressRule struct {
+	Domains []string `yaml:"domains"`
+	Label   string   `yaml:"label"`
+	Action  string   `yaml:"action"` // "allow"
+}
+
 // EgressConfig defines outbound traffic controls
 type EgressConfig struct {
-	AllowDomains []string `yaml:"allow_domains"` // Whitelisted domains
-	PIIPatterns  []string `yaml:"pii_patterns"`  // Regex patterns for PII detection
+	Mode         string       `yaml:"mode"`          // "enforce" (default) or "record"
+	AllowDomains []string     `yaml:"allow_domains"` // legacy flat list (backward compat)
+	Rules        []EgressRule `yaml:"rules"`         // structured rules
+	PIIPatterns  []string     `yaml:"pii_patterns"`  // Regex patterns for PII detection
 	piiRegexes   []*regexp.Regexp
 }
 
@@ -264,6 +273,19 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Telemetry.JSONL.Path == "" {
 		cfg.Telemetry.JSONL.Path = "/var/lib/parachute/events.jsonl"
+	}
+
+	// Egress mode defaults
+	if cfg.Egress.Mode == "" {
+		cfg.Egress.Mode = "enforce"
+	}
+	// Convert legacy allow_domains to structured rule
+	if len(cfg.Egress.AllowDomains) > 0 && len(cfg.Egress.Rules) == 0 {
+		cfg.Egress.Rules = []EgressRule{{
+			Domains: cfg.Egress.AllowDomains,
+			Label:   "legacy",
+			Action:  "allow",
+		}}
 	}
 
 	// Compile regex patterns

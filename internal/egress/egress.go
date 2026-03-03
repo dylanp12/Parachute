@@ -19,28 +19,56 @@ func New(cfg *config.EgressConfig) *Filter {
 
 // CheckResult represents the outcome of an egress check
 type CheckResult struct {
-	Allowed bool
-	Reason  string
-	Pattern string
+	Allowed  bool
+	Reason   string
+	Pattern  string
+	RulePath string // e.g., "egress/domain/allow:llm-providers"
 }
 
 // CheckURL validates if an outbound URL is allowed
 func (f *Filter) CheckURL(rawURL string) *CheckResult {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return &CheckResult{Allowed: false, Reason: "invalid URL"}
+		return &CheckResult{Allowed: false, Reason: "invalid URL", RulePath: "egress/parse_error"}
 	}
 
 	host := u.Hostname()
 	if host == "" {
-		return &CheckResult{Allowed: false, Reason: "no hostname in URL"}
+		return &CheckResult{Allowed: false, Reason: "no hostname in URL", RulePath: "egress/no_host"}
 	}
 
-	if !f.cfg.IsDomainAllowed(host) {
-		return &CheckResult{Allowed: false, Reason: "domain not in whitelist"}
+	// Check structured rules
+	for _, rule := range f.cfg.Rules {
+		for _, domain := range rule.Domains {
+			if matchDomain(host, domain) {
+				return &CheckResult{
+					Allowed:  rule.Action == "allow",
+					RulePath: "egress/domain/" + rule.Action + ":" + rule.Label,
+				}
+			}
+		}
 	}
 
-	return &CheckResult{Allowed: true}
+	// Fall back to legacy allow_domains
+	if f.cfg.IsDomainAllowed(host) {
+		return &CheckResult{Allowed: true, RulePath: "egress/domain/allow:legacy"}
+	}
+
+	return &CheckResult{Allowed: false, Reason: "domain not in allowlist", RulePath: "egress/domain/deny:unlisted"}
+}
+
+// matchDomain checks if a host matches a domain pattern (exact or wildcard).
+func matchDomain(host, pattern string) bool {
+	host = strings.ToLower(host)
+	pattern = strings.ToLower(pattern)
+	if host == pattern {
+		return true
+	}
+	if strings.HasPrefix(pattern, "*.") {
+		suffix := pattern[1:] // e.g. ".github.com"
+		return strings.HasSuffix(host, suffix)
+	}
+	return false
 }
 
 // CheckContent scans content for PII patterns

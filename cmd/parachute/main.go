@@ -196,7 +196,7 @@ func main() {
 	}
 
 	// Start forward proxy for agent egress control
-	proxyServer := proxy.NewProxyServer(cfg)
+	proxyServer := proxy.NewProxyServer(cfg, nil) // telemetry will be wired in Task 15
 	go func() {
 		if err := proxyServer.ListenAndServe(cfg.ProxyListen); err != nil {
 			log.Errorf("Forward proxy error: %v", err)

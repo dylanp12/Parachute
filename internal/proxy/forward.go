@@ -21,24 +21,39 @@ import (
 // SECURITY NOTE: PII Detection Limitations
 // - HTTP requests: Full content inspection (PII patterns checked)
 // - HTTPS CONNECT: Only domain filtering, NO content inspection
-//   HTTPS tunnels are end-to-end encrypted; we cannot inspect the payload
-//   without TLS interception (MITM), which is not implemented.
-//   See docs/pii-detection.md for details.
+//
+//	HTTPS tunnels are end-to-end encrypted; we cannot inspect the payload
+//	without TLS interception (MITM), which is not implemented.
+//	See docs/pii-detection.md for details.
 type ForwardProxy struct {
 	egress  *egress.Filter
 	cfg     *config.Config
 	dialer  *net.Dialer
 	timeout time.Duration
+	onEvent func(actionType, target, decision, rulePath, enforcementMode string)
 }
 
 // NewForwardProxy creates a new forward proxy instance
-func NewForwardProxy(cfg *config.Config) *ForwardProxy {
+func NewForwardProxy(cfg *config.Config, onEvent func(string, string, string, string, string)) *ForwardProxy {
 	return &ForwardProxy{
 		egress:  egress.New(&cfg.Egress),
 		cfg:     cfg,
 		dialer:  &net.Dialer{Timeout: 30 * time.Second},
 		timeout: 60 * time.Second,
+		onEvent: onEvent,
 	}
+}
+
+// emitEvent calls the telemetry callback if set.
+func (fp *ForwardProxy) emitEvent(actionType, target, decision, rulePath string) {
+	if fp.onEvent != nil {
+		fp.onEvent(actionType, target, decision, rulePath, fp.cfg.Egress.Mode)
+	}
+}
+
+// isRecordMode returns true when egress is in record-only mode.
+func (fp *ForwardProxy) isRecordMode() bool {
+	return fp.cfg.Egress.Mode == "record"
 }
 
 // Handler returns the Fiber handler for forward proxying
@@ -52,11 +67,18 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 		result := fp.egress.CheckURL(targetURL)
 		if !result.Allowed {
 			log.Warnf("[EGRESS:BLOCKED] Domain not allowed: %s (reason: %s)", targetURL, result.Reason)
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error":  "egress blocked",
-				"reason": result.Reason,
-				"url":    targetURL,
-			})
+			fp.emitEvent("egress", targetURL, "deny", result.RulePath)
+
+			// In record mode, log but don't enforce — let the request through
+			if !fp.isRecordMode() {
+				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+					"error":  "egress blocked",
+					"reason": result.Reason,
+					"url":    targetURL,
+				})
+			}
+		} else {
+			fp.emitEvent("egress", targetURL, "allow", result.RulePath)
 		}
 
 		// Check for PII in request body
@@ -65,11 +87,15 @@ func (fp *ForwardProxy) Handler() fiber.Handler {
 			piiResult := fp.egress.CheckContent(string(body))
 			if !piiResult.Allowed {
 				log.Warnf("[EGRESS:BLOCKED] PII detected in outbound request: %s", piiResult.Pattern)
-				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-					"error":   "egress blocked",
-					"reason":  piiResult.Reason,
-					"pattern": piiResult.Pattern,
-				})
+				fp.emitEvent("egress", targetURL, "deny", "egress/pii")
+
+				if !fp.isRecordMode() {
+					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+						"error":   "egress blocked",
+						"reason":  piiResult.Reason,
+						"pattern": piiResult.Pattern,
+					})
+				}
 			}
 		}
 
@@ -145,8 +171,15 @@ func (fp *ForwardProxy) HandleConnect(clientConn net.Conn, host string) {
 	result := fp.egress.CheckURL("https://" + hostname)
 	if !result.Allowed {
 		log.Warnf("[EGRESS:BLOCKED] CONNECT to %s denied (reason: %s)", host, result.Reason)
-		clientConn.Write([]byte("HTTP/1.1 403 Forbidden\r\n\r\nDomain not allowed\n"))
-		return
+		fp.emitEvent("egress", hostname, "deny", result.RulePath)
+
+		// In record mode, log but don't enforce — let the tunnel through
+		if !fp.isRecordMode() {
+			clientConn.Write([]byte("HTTP/1.1 403 Forbidden\r\n\r\nDomain not allowed\n"))
+			return
+		}
+	} else {
+		fp.emitEvent("egress", hostname, "allow", result.RulePath)
 	}
 
 	log.Infof("[EGRESS:ALLOWED] CONNECT tunnel to %s", host)
@@ -185,9 +218,9 @@ type ProxyServer struct {
 }
 
 // NewProxyServer creates a new proxy server
-func NewProxyServer(cfg *config.Config) *ProxyServer {
+func NewProxyServer(cfg *config.Config, onEvent func(string, string, string, string, string)) *ProxyServer {
 	return &ProxyServer{
-		fp: NewForwardProxy(cfg),
+		fp: NewForwardProxy(cfg, onEvent),
 	}
 }
 
@@ -257,18 +290,25 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 	result := ps.fp.egress.CheckURL(targetURL)
 	if !result.Allowed {
 		log.Warnf("[EGRESS:BLOCKED] HTTP to %s denied (reason: %s)", targetURL, result.Reason)
-		resp := &http.Response{
-			StatusCode: 403,
-			Status:     "403 Forbidden",
-			Proto:      "HTTP/1.1",
-			ProtoMajor: 1,
-			ProtoMinor: 1,
-			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader("Domain not allowed\n")),
+		ps.fp.emitEvent("egress", targetURL, "deny", result.RulePath)
+
+		// In record mode, log but don't enforce — let the request through
+		if !ps.fp.isRecordMode() {
+			resp := &http.Response{
+				StatusCode: 403,
+				Status:     "403 Forbidden",
+				Proto:      "HTTP/1.1",
+				ProtoMajor: 1,
+				ProtoMinor: 1,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("Domain not allowed\n")),
+			}
+			resp.Header.Set("Content-Type", "text/plain")
+			resp.Write(conn)
+			return
 		}
-		resp.Header.Set("Content-Type", "text/plain")
-		resp.Write(conn)
-		return
+	} else {
+		ps.fp.emitEvent("egress", targetURL, "allow", result.RulePath)
 	}
 
 	// Check for PII in request body
@@ -278,17 +318,21 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 			piiResult := ps.fp.egress.CheckContent(string(bodyBytes))
 			if !piiResult.Allowed {
 				log.Warnf("[EGRESS:BLOCKED] PII in outbound request: %s", piiResult.Pattern)
-				resp := &http.Response{
-					StatusCode: 403,
-					Status:     "403 Forbidden",
-					Proto:      "HTTP/1.1",
-					ProtoMajor: 1,
-					ProtoMinor: 1,
-					Header:     make(http.Header),
-					Body:       io.NopCloser(strings.NewReader("PII detected in request\n")),
+				ps.fp.emitEvent("egress", targetURL, "deny", "egress/pii")
+
+				if !ps.fp.isRecordMode() {
+					resp := &http.Response{
+						StatusCode: 403,
+						Status:     "403 Forbidden",
+						Proto:      "HTTP/1.1",
+						ProtoMajor: 1,
+						ProtoMinor: 1,
+						Header:     make(http.Header),
+						Body:       io.NopCloser(strings.NewReader("PII detected in request\n")),
+					}
+					resp.Write(conn)
+					return
 				}
-				resp.Write(conn)
-				return
 			}
 			req.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
 		}
