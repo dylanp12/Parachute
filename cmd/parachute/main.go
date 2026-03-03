@@ -279,9 +279,15 @@ func toMCPServerPolicies(policies map[string]config.MCPServerPolicy) map[string]
 func toMCPUpstreams(upstreams []config.MCPUpstreamConfig) []mcp.ServerConfig {
 	result := make([]mcp.ServerConfig, 0, len(upstreams))
 	for _, u := range upstreams {
+		transport := u.Transport
+		if transport == "" {
+			transport = "http"
+		}
 		result = append(result, mcp.ServerConfig{
-			Name: u.Name,
-			URL:  u.URL,
+			Name:      u.Name,
+			URL:       u.URL,
+			Transport: transport,
+			Command:   u.Command,
 		})
 	}
 	return result
