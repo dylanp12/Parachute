@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -123,6 +124,38 @@ func main() {
 
 		collector.Start(ctx)
 		log.Infof("Telemetry enabled: JSONL -> %s", cfg.Telemetry.JSONL.Path)
+
+		// HTTP batch exporter (when Pro URL configured)
+		if cfg.Telemetry.HTTP.URL != "" {
+			apiKey := os.Getenv(cfg.Telemetry.HTTP.APIKeyEnv)
+			httpExp, err := exporters.NewHTTPBatchExporter(exporters.HTTPBatchConfig{
+				ProURL:        cfg.Telemetry.HTTP.URL,
+				APIKey:        apiKey,
+				SpoolPath:     cfg.Telemetry.JSONL.Path,
+				OffsetPath:    cfg.Telemetry.HTTP.OffsetPath,
+				BatchSize:     cfg.Telemetry.HTTP.BatchSize,
+				FlushInterval: parseDuration(cfg.Telemetry.HTTP.FlushInterval, 10*time.Second),
+			})
+			if err != nil {
+				log.Fatalf("Failed to create HTTP exporter: %v", err)
+			}
+			httpExp.Start(ctx)
+			log.Infof("Telemetry HTTP exporter -> %s", cfg.Telemetry.HTTP.URL)
+		}
+
+		// Heartbeat emitter
+		if cfg.Telemetry.HTTP.URL != "" {
+			heartbeatURL := strings.TrimSuffix(cfg.Telemetry.HTTP.URL, "/sdr-batch") + "/heartbeat"
+			hb := exporters.NewHeartbeatEmitter(exporters.HeartbeatConfig{
+				ProURL:   heartbeatURL,
+				APIKey:   os.Getenv(cfg.Telemetry.HTTP.APIKeyEnv),
+				AgentID:  cfg.Telemetry.AgentID,
+				TenantID: cfg.Telemetry.TenantID,
+				Interval: parseDuration(cfg.Telemetry.Heartbeat.Interval, 30*time.Second),
+				Version:  version,
+			})
+			hb.Start(ctx)
+		}
 	}
 
 	// Create rate limiter: 60 requests per minute per IP
@@ -182,7 +215,32 @@ func main() {
 			Servers:       toMCPServerPolicies(cfg.MCP.Servers),
 			Upstreams:     toMCPUpstreams(cfg.MCP.Upstreams),
 		}
-		mcpProxy := mcp.NewProxy(mcpCfg, approvalQ, notifier, cmdInterceptor)
+
+		// MCP telemetry callback
+		var mcpCallback func(mcp.TelemetryHook)
+		if collector != nil {
+			mcpCallback = func(event mcp.TelemetryHook) {
+				te := telemetry.TelemetryEvent{
+					ActionType:      event.ActionType,
+					ActionTarget:    event.ActionTarget,
+					Decision:        event.Decision,
+					RulePath:        event.RulePath,
+					EnforcementMode: event.EnforcementMode,
+					SpanID:          event.SpanID,
+					ParentSpanID:    event.ParentSpanID,
+				}
+				if event.Approval != nil {
+					te.Approval = &telemetry.ApprovalDetail{
+						ID:             event.Approval.ID,
+						ApproverID:     event.Approval.ApproverID,
+						ApproverType:   event.Approval.ApproverType,
+						ApprovalSource: event.Approval.Source,
+					}
+				}
+				collector.Record(te)
+			}
+		}
+		mcpProxy := mcp.NewProxy(mcpCfg, approvalQ, notifier, cmdInterceptor, mcpCallback)
 		mcpGroup := app.Group("/mcp")
 		mcpGroup.Use(middleware.Auth(&cfg.Auth))
 		mcpProxy.RegisterRoutes(mcpGroup)
@@ -195,8 +253,20 @@ func main() {
 		go relayClient.Start(context.Background())
 	}
 
-	// Start forward proxy for agent egress control
-	proxyServer := proxy.NewProxyServer(cfg, nil) // telemetry will be wired in Task 15
+	// Create egress telemetry callback
+	var egressCallback func(string, string, string, string, string)
+	if collector != nil {
+		egressCallback = func(actionType, target, decision, rulePath, enforcementMode string) {
+			collector.Record(telemetry.TelemetryEvent{
+				ActionType:      actionType,
+				ActionTarget:    target,
+				Decision:        decision,
+				RulePath:        rulePath,
+				EnforcementMode: enforcementMode,
+			})
+		}
+	}
+	proxyServer := proxy.NewProxyServer(cfg, egressCallback)
 	go func() {
 		if err := proxyServer.ListenAndServe(cfg.ProxyListen); err != nil {
 			log.Errorf("Forward proxy error: %v", err)
@@ -291,4 +361,16 @@ func toMCPUpstreams(upstreams []config.MCPUpstreamConfig) []mcp.ServerConfig {
 		})
 	}
 	return result
+}
+
+// parseDuration parses a Go duration string with a fallback default.
+func parseDuration(s string, fallback time.Duration) time.Duration {
+	if s == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
