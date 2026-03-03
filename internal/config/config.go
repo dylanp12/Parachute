@@ -19,6 +19,27 @@ type ToolInterceptionConfig struct {
 	Enabled bool `yaml:"enabled"` // default false
 }
 
+// TelemetryConfig controls SDR event emission
+type TelemetryConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	AgentID        string `yaml:"agent_id"`
+	TenantID       string `yaml:"tenant_id"`
+	ChainStatePath string `yaml:"chain_state_path"`
+	JSONL          struct {
+		Path string `yaml:"path"`
+	} `yaml:"jsonl"`
+	HTTP struct {
+		URL           string `yaml:"url"`
+		APIKeyEnv     string `yaml:"api_key_env"`
+		BatchSize     int    `yaml:"batch_size"`
+		FlushInterval string `yaml:"flush_interval"`
+		OffsetPath    string `yaml:"offset_path"`
+	} `yaml:"http"`
+	Heartbeat struct {
+		Interval string `yaml:"interval"`
+	} `yaml:"heartbeat"`
+}
+
 // Config is the root configuration structure
 type Config struct {
 	Auth         AuthConfig         `yaml:"auth"`
@@ -28,6 +49,7 @@ type Config struct {
 	Storage      StorageConfig      `yaml:"storage"`
 	MCP          MCPConfig          `yaml:"mcp"`
 	ReverseProxy ReverseProxyConfig `yaml:"reverse_proxy"`
+	Telemetry    TelemetryConfig    `yaml:"telemetry"`
 	Webhooks     []WebhookConfig    `yaml:"webhooks"`
 	License      LicenseConfig      `yaml:"license"`
 	Upstream     string             `yaml:"upstream"`
@@ -236,6 +258,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Storage.Path == "" {
 		cfg.Storage.Path = "/var/lib/parachute/parachute.db"
+	}
+	if cfg.Telemetry.ChainStatePath == "" {
+		cfg.Telemetry.ChainStatePath = "/var/lib/parachute/chain_state.json"
+	}
+	if cfg.Telemetry.JSONL.Path == "" {
+		cfg.Telemetry.JSONL.Path = "/var/lib/parachute/events.jsonl"
 	}
 
 	// Compile regex patterns

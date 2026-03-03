@@ -25,6 +25,8 @@ import (
 	"github.com/parachute-security/parachute/internal/proxy"
 	"github.com/parachute-security/parachute/internal/relay"
 	"github.com/parachute-security/parachute/internal/storage"
+	"github.com/parachute-security/parachute/internal/telemetry"
+	"github.com/parachute-security/parachute/internal/telemetry/exporters"
 )
 
 var (
@@ -94,6 +96,34 @@ func main() {
 
 	webhooks := loadWebhooks(cfg)
 	notifier := approval.NewNotifier(webhooks)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Telemetry collector
+	var collector *telemetry.Collector
+	if cfg.Telemetry.Enabled {
+		chainState, err := telemetry.LoadChainState(cfg.Telemetry.ChainStatePath)
+		if err != nil {
+			log.Fatalf("Failed to load chain state: %v", err)
+		}
+
+		var telemetryExporters []telemetry.Exporter
+		jsonlExp, err := exporters.NewJSONLExporter(cfg.Telemetry.JSONL.Path)
+		if err != nil {
+			log.Fatalf("Failed to create JSONL exporter: %v", err)
+		}
+		telemetryExporters = append(telemetryExporters, jsonlExp)
+
+		collector = telemetry.NewCollector(telemetry.CollectorConfig{
+			AgentID:        cfg.Telemetry.AgentID,
+			TenantID:       cfg.Telemetry.TenantID,
+			SidecarVersion: version,
+		}, chainState, telemetryExporters)
+
+		collector.Start(ctx)
+		log.Infof("Telemetry enabled: JSONL -> %s", cfg.Telemetry.JSONL.Path)
+	}
 
 	// Create rate limiter: 60 requests per minute per IP
 	rateLimiter := middleware.NewRateLimiter(60, time.Minute)
@@ -173,9 +203,6 @@ func main() {
 		}
 	}()
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-
 	go func() {
 		if err := app.Listen(cfg.Listen); err != nil {
 			log.Fatalf("Server error: %v", err)
@@ -199,6 +226,12 @@ func main() {
 	if store != nil {
 		if err := store.Close(); err != nil {
 			log.Errorf("Storage shutdown error: %v", err)
+		}
+	}
+
+	if collector != nil {
+		if err := collector.Close(); err != nil {
+			log.Errorf("Telemetry shutdown error: %v", err)
 		}
 	}
 
