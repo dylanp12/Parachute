@@ -50,6 +50,13 @@ func LoadChainState(path string) (*ChainState, error) {
 	return cs, nil
 }
 
+// GetChainInfo returns the current chain linkage info under the lock.
+func (cs *ChainState) GetChainInfo() (prevHash, chainID string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.PrevHash, cs.ChainID
+}
+
 // Advance updates chain state after a new SDR is created.
 func (cs *ChainState) Advance(recordHash string) {
 	cs.mu.Lock()
