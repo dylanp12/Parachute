@@ -5,7 +5,7 @@
 # Run: docker compose -f docker-compose.telemetry-demo.yml up --build
 #
 # Test:
-#   curl -u admin:demo -X POST http://localhost:9090/mcp \
+#   curl -u admin:demo -X POST http://localhost:8080/mcp \
 #     -H 'Content-Type: application/json' \
 #     -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"Read","arguments":{"path":"/tmp/test"}},"id":1}'
 #
@@ -13,7 +13,7 @@
 #   docker exec parachute-telemetry-demo cat /var/lib/parachute/events.jsonl
 #
 # Check Pro health:
-#   curl http://localhost:8443/health
+#   curl http://localhost:8443/healthz
 
 services:
   postgres:
@@ -27,6 +27,9 @@ services:
       - "15432:5432"
     volumes:
       - demo-pgdata:/var/lib/postgresql/data
+      # Auto-run migrations at first boot
+      - ../parachute-pro/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql:ro
+      - ../parachute-pro/migrations/002_telemetry_v0.sql:/docker-entrypoint-initdb.d/002_telemetry_v0.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U parachute -d parachute_pro"]
       interval: 5s
@@ -35,8 +38,8 @@ services:
 
   parachute-pro:
     build:
-      context: ../parachute-pro
-      dockerfile: Dockerfile
+      context: ..              # parachute-repos/ level (both repos available)
+      dockerfile: parachute/demo/Dockerfile.pro-demo
     container_name: demo-parachute-pro
     ports:
       - "8443:8443"
@@ -45,14 +48,11 @@ services:
     environment:
       PARACHUTE_PRO_DB_URL: "postgres://parachute:devpassword@postgres:5432/parachute_pro?sslmode=disable"
       PARACHUTE_PRO_ALLOW_UNSIGNED_INGEST: "true"
-      PARACHUTE_PRO_S3_ENDPOINT: "http://localhost:9000"
-      PARACHUTE_PRO_S3_ACCESS_KEY: "minioadmin"
-      PARACHUTE_PRO_S3_SECRET_KEY: "minioadmin"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8443/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8443/healthz"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -67,7 +67,6 @@ services:
     container_name: parachute-telemetry-demo
     ports:
       - "8080:8080"
-      - "9090:8080"
       - "8888:8888"
     volumes:
       - ./demo/parachute.telemetry-demo.yaml:/etc/parachute/config.yaml:ro
@@ -79,7 +78,7 @@ services:
       parachute-pro:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
       interval: 5s
       timeout: 3s
       retries: 5

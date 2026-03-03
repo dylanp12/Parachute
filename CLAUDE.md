@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Parachute is a security sidecar for autonomous AI agents. It acts as a drop-in proxy that sits between the internet and an AI agent container, providing authentication, command interception, egress control, and data leak prevention.
+Parachute is a security sidecar for autonomous AI agents (primarily OpenClaw/Moltbot). It acts as a drop-in proxy that sits between the internet and an AI agent container, providing authentication, command interception, and data leak prevention.
 
 **Core Value Proposition:** "The Seatbelt for your AI Agent" - intercepts all traffic entering and leaving the agent container, creating a safe execution environment.
 

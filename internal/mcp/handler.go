@@ -66,9 +66,9 @@ func (h *Handler) HandleJSONRPC(c fiber.Ctx) error {
 
 	m := metrics.Get()
 
-	// Non-sensitive methods pass through
+	// Non-sensitive methods pass through to upstream
 	if !IsSensitiveMethod(req.Method) {
-		return c.Next()
+		return nil
 	}
 
 	correlationID := c.Get("X-Correlation-ID")
@@ -80,7 +80,7 @@ func (h *Handler) HandleJSONRPC(c fiber.Ctx) error {
 	case MethodResourcesRead:
 		return h.handleResourcesRead(c, req, correlationID, serverName, m)
 	default:
-		return c.Next()
+		return nil
 	}
 }
 
@@ -138,7 +138,7 @@ func (h *Handler) handleToolsCall(c fiber.Ctx, req *JSONRPCRequest, correlationI
 			ToolName:      tc.Name,
 			Details:       map[string]string{"mcp_server": serverName},
 		})
-		return c.Next()
+		return nil // allow caller to forward to upstream
 	}
 }
 

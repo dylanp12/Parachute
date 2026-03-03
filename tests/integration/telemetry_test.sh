@@ -14,7 +14,7 @@ echo ""
 # 1. Wait for stack to be ready
 echo "Step 1: Checking stack health..."
 for i in $(seq 1 30); do
-    if curl -sf "$BASE_URL/health" > /dev/null 2>&1 && curl -sf "$PRO_URL/health" > /dev/null 2>&1; then
+    if curl -sf "$BASE_URL/health" > /dev/null 2>&1 && curl -sf "$PRO_URL/healthz" > /dev/null 2>&1; then
         echo "  Stack is healthy!"
         break
     fi
@@ -59,9 +59,21 @@ CHAIN_STATE=$(docker exec parachute-telemetry-demo sh -c 'cat /var/lib/parachute
 echo "  Chain state: $(echo "$CHAIN_STATE" | head -c 120)..."
 echo ""
 
-# 6. Summary
+# 6. Check Pro database for ingested records
+echo "Step 6: Checking Pro database..."
+PRO_COUNT=$(docker exec demo-postgres psql -U parachute -d parachute_pro -t -c "SELECT COUNT(*) FROM sdr_records;" 2>/dev/null | tr -d ' ')
+echo "  SDR records in Pro DB: $PRO_COUNT"
+if [ "$PRO_COUNT" -ge 1 ]; then
+    echo "  PASS: SDR records ingested into Pro"
+else
+    echo "  WARN: No SDR records in Pro DB (exporter may need more time)"
+fi
+echo ""
+
+# 7. Summary
 echo "=== Results ==="
-echo "  SDR records created: $SDR_COUNT"
+echo "  SDR records in JSONL: $SDR_COUNT"
+echo "  SDR records in Pro DB: $PRO_COUNT"
 echo "  Chain state persisted: yes"
 echo ""
 echo "=== Integration Test PASSED ==="

@@ -9,11 +9,8 @@ database:
   migration_dir: "/app/migrations"
 
 object_storage:
-  endpoint_env: PARACHUTE_PRO_S3_ENDPOINT
+  endpoint: "/app/data/objects"
   bucket: demo-bundles
-  access_key_env: PARACHUTE_PRO_S3_ACCESS_KEY
-  secret_key_env: PARACHUTE_PRO_S3_SECRET_KEY
-  region: us-east-1
 
 crypto:
   signing_key_path: ""
@@ -22,6 +19,8 @@ crypto:
 tenant:
   id: "demo-tenant"
   name: "Demo Tenant"
+  api_keys:
+    - "demo-api-key"
 
 ingest:
   max_batch_size: 100
