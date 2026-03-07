@@ -25,7 +25,11 @@ type TelemetryConfig struct {
 	AgentID        string `yaml:"agent_id"`
 	TenantID       string `yaml:"tenant_id"`
 	ChainStatePath string `yaml:"chain_state_path"`
-	JSONL          struct {
+	Signing        struct {
+		KeyPath string `yaml:"key_path"` // Path to Ed25519 private key (PEM or raw)
+		KeyID   string `yaml:"key_id"`   // Optional override; derived from public key if empty
+	} `yaml:"signing"`
+	JSONL struct {
 		Path string `yaml:"path"`
 	} `yaml:"jsonl"`
 	HTTP struct {
