@@ -77,6 +77,12 @@ telemetry:
   agent_id: ""       # Auto-generated UUID if empty
   tenant_id: ""      # Your organization ID from Parachute Pro
   chain_state_path: "/var/lib/parachute/chain_state.json"
+  # Signing: Ed25519 signing of SDR records for evidence-grade guarantees.
+  # Generate keys with: parachute-keygen --private sidecar.key --public sidecar.pub
+  # Copy sidecar.pub to Pro's trusted_keys_dir.
+  # signing:
+  #   key_path: "/etc/parachute/sidecar.key"
+  #   key_id: ""  # Auto-derived from public key if empty
   jsonl:
     path: "/var/lib/parachute/events.jsonl"
   # HTTP upload to Parachute Pro (requires Pro URL and API key)
