@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/hex"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"os"
@@ -116,10 +119,47 @@ func main() {
 		}
 		telemetryExporters = append(telemetryExporters, jsonlExp)
 
+		// Load SDR signing key
+		var signingKey ed25519.PrivateKey
+		var keyID string
+		if cfg.Telemetry.Signing.KeyPath != "" {
+			keyData, err := os.ReadFile(cfg.Telemetry.Signing.KeyPath)
+			if err != nil {
+				log.Fatalf("Failed to read signing key %s: %v", cfg.Telemetry.Signing.KeyPath, err)
+			}
+
+			// Try PEM decode first
+			if block, _ := pem.Decode(keyData); block != nil {
+				keyData = block.Bytes
+			}
+
+			switch len(keyData) {
+			case ed25519.PrivateKeySize: // 64 bytes — full private key
+				signingKey = ed25519.PrivateKey(keyData)
+			case ed25519.SeedSize: // 32 bytes — seed
+				signingKey = ed25519.NewKeyFromSeed(keyData)
+			default:
+				log.Fatalf("Invalid signing key size %d (expected 32 or 64 bytes)", len(keyData))
+			}
+
+			// Derive key ID
+			pubKey := signingKey.Public().(ed25519.PublicKey)
+			if cfg.Telemetry.Signing.KeyID != "" {
+				keyID = cfg.Telemetry.Signing.KeyID
+			} else {
+				keyID = "sidecar/" + hex.EncodeToString(pubKey[:8])
+			}
+			log.Infof("SDR signing enabled: key_id=%s", keyID)
+		} else {
+			log.Info("SDR signing disabled: records will be unsigned")
+		}
+
 		collector = telemetry.NewCollector(telemetry.CollectorConfig{
 			AgentID:        cfg.Telemetry.AgentID,
 			TenantID:       cfg.Telemetry.TenantID,
 			SidecarVersion: version,
+			SigningKey:     signingKey,
+			KeyID:          keyID,
 		}, chainState, telemetryExporters)
 
 		collector.Start(ctx)

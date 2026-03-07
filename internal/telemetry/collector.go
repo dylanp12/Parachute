@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"sync/atomic"
@@ -23,6 +24,8 @@ type CollectorConfig struct {
 	TenantID       string
 	SidecarVersion string
 	QueueSize      int // default 10000
+	SigningKey     ed25519.PrivateKey
+	KeyID          string
 }
 
 // CollectorMetrics exposes collector counters.
@@ -34,6 +37,8 @@ type CollectorMetrics struct {
 // Collector aggregates events from egress and MCP, converts to SDR, and dispatches to exporters.
 type Collector struct {
 	cfg        CollectorConfig
+	signingKey ed25519.PrivateKey
+	keyID      string
 	sessionID  string
 	chainState *ChainState
 	queue      chan *sdr.SDR
@@ -58,6 +63,8 @@ func NewCollector(cfg CollectorConfig, chainState *ChainState, exporters []Expor
 
 	return &Collector{
 		cfg:        cfg,
+		signingKey: cfg.SigningKey,
+		keyID:      cfg.KeyID,
 		sessionID:  uuid.New().String(),
 		chainState: chainState,
 		queue:      make(chan *sdr.SDR, cfg.QueueSize),
@@ -136,11 +143,28 @@ func (c *Collector) RecordWithParent(event TelemetryEvent, parentSpanID string) 
 		}
 	}
 
-	// Compute record hash (chain hashing is always active)
-	canonical, err := sdr.CanonicalJSON(record)
-	if err == nil {
-		hash := sha256.Sum256(canonical)
-		record.Chain.RecordHash = hex.EncodeToString(hash[:])
+	if c.signingKey != nil {
+		// Sign the record (also sets Chain.RecordHash)
+		if err := sdr.Sign(record, c.signingKey, c.keyID); err != nil {
+			// Fall back to unsigned with manual hash
+			record.Signing = sdr.SigningInfo{
+				KeyID:       "unsigned",
+				Algorithm:   "none",
+				SigningTime: event.Timestamp,
+			}
+			canonical, err := sdr.CanonicalJSON(record)
+			if err == nil {
+				hash := sha256.Sum256(canonical)
+				record.Chain.RecordHash = hex.EncodeToString(hash[:])
+			}
+		}
+	} else {
+		// No signing key: unsigned with manual hash
+		canonical, err := sdr.CanonicalJSON(record)
+		if err == nil {
+			hash := sha256.Sum256(canonical)
+			record.Chain.RecordHash = hex.EncodeToString(hash[:])
+		}
 	}
 
 	// Advance chain state
