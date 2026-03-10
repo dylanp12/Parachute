@@ -95,6 +95,27 @@ telemetry:
   # heartbeat:
   #   interval: "30s"
 
+# Credential Broker Gateway
+# The broker enables credentialless agent access to managed integrations.
+# Agents call APIs with zero credentials; Parachute brokers access through
+# policy-controlled credential injection on a dedicated internal listener.
+# broker:
+#   enabled: false
+#   listen: ":8081"            # Dedicated internal-only listener (no auth -- network segmentation is the trust boundary)
+#   mode: "off"                # "off" (disabled), "record" (log only), "enforce" (block direct access)
+#   fail_behavior: "closed"    # "closed" (deny on failure) or "open" (passthrough)
+#   integrations:
+#     - name: "github"
+#       hosts: ["api.github.com", "uploads.github.com"]
+#       enabled: true
+#       credential_source: "dev_static"  # "dev_static" (env var) or "pro" (Pro control plane)
+#       static_token_env: "GITHUB_TOKEN" # only for credential_source: dev_static
+#       # header_name: "Authorization"   # default
+#       # token_prefix: "Bearer "        # default
+#   # Pro connection (for credential_source: "pro")
+#   # pro_url: "https://pro.example.com"
+#   # api_key_env: "PARACHUTE_PRO_API_KEY"
+
 relay:
   enabled: false
   # server_url: "wss://relay.parachute.io/ws"

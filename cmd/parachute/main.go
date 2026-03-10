@@ -20,6 +20,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/logger"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/dylanp12/parachute/internal/approval"
+	"github.com/dylanp12/parachute/internal/broker"
 	"github.com/dylanp12/parachute/internal/config"
 	"github.com/dylanp12/parachute/internal/dashboard"
 	"github.com/dylanp12/parachute/internal/interceptor"
@@ -306,12 +307,119 @@ func main() {
 			})
 		}
 	}
-	proxyServer := proxy.NewProxyServer(cfg, egressCallback)
+	// Build integration matcher for broker (shared between forward proxy and gateway)
+	var matcher *broker.IntegrationMatcher
+	if cfg.Broker.Enabled {
+		var defs []broker.IntegrationDef
+		for _, ic := range cfg.Broker.Integrations {
+			if !ic.Enabled {
+				continue
+			}
+			defs = append(defs, broker.IntegrationDef{
+				Name:  ic.Name,
+				Hosts: ic.Hosts,
+			})
+		}
+		matcher = broker.NewMatcher(defs)
+	}
+
+	proxyServer := proxy.NewProxyServer(cfg, matcher, egressCallback)
 	go func() {
 		if err := proxyServer.ListenAndServe(cfg.ProxyListen); err != nil {
 			log.Errorf("Forward proxy error: %v", err)
 		}
 	}()
+
+	// Broker gateway (dedicated internal listener)
+	var brokerApp *fiber.App
+	if cfg.Broker.Enabled {
+
+		// Build credential broker based on config
+		var credBroker broker.CredentialBroker
+
+		// Check if any integration uses Pro as credential source
+		usePro := false
+		for _, ic := range cfg.Broker.Integrations {
+			if ic.Enabled && ic.CredentialSource == "pro" {
+				usePro = true
+				break
+			}
+		}
+
+		if usePro && cfg.Broker.ProURL != "" {
+			credBroker = broker.NewProBroker(broker.ProBrokerConfig{
+				ProURL:    cfg.Broker.ProURL,
+				APIKeyEnv: cfg.Broker.APIKeyEnv,
+			})
+			log.Infof("Broker credential source: Pro (%s)", cfg.Broker.ProURL)
+		} else {
+			devSources := make(map[string]broker.DevStaticConfig)
+			for _, ic := range cfg.Broker.Integrations {
+				if !ic.Enabled {
+					continue
+				}
+				if ic.CredentialSource == "dev_static" && ic.StaticTokenEnv != "" {
+					devSources[ic.Name] = broker.DevStaticConfig{
+						TokenEnv:   ic.StaticTokenEnv,
+						HeaderName: ic.HeaderName,
+						Prefix:     ic.TokenPrefix,
+					}
+				}
+			}
+			if len(devSources) > 0 {
+				credBroker = broker.NewDevStaticBroker(devSources)
+				log.Infof("Broker credential source: dev_static")
+			} else {
+				credBroker = broker.NewNoopBroker()
+				log.Infof("Broker credential source: noop (no credentials configured)")
+			}
+		}
+
+		// Broker telemetry callback
+		var brokerCallback broker.TelemetryCallback
+		if collector != nil {
+			brokerCallback = func(actionType, target, decision, rulePath, enforcementMode string, params map[string]any) {
+				collector.Record(telemetry.TelemetryEvent{
+					ActionType:      actionType,
+					ActionTarget:    target,
+					Decision:        decision,
+					RulePath:        rulePath,
+					EnforcementMode: enforcementMode,
+					ActionParams:    params,
+				})
+			}
+		}
+
+		gw := broker.NewGateway(broker.GatewayConfig{
+			Matcher: matcher,
+			Broker:  credBroker,
+			Mode:    cfg.Broker.Mode,
+			FailBeh: cfg.Broker.FailBehavior,
+			OnEvent: brokerCallback,
+			AgentID: cfg.Telemetry.AgentID,
+		})
+
+		// Separate Fiber app for broker -- no auth middleware (internal-only, network segmentation is the trust boundary)
+		brokerApp = fiber.New(fiber.Config{
+			AppName:      "Parachute-Broker",
+			ServerHeader: "Parachute-Broker",
+			ReadTimeout:  60 * time.Second,
+			WriteTimeout: 60 * time.Second,
+		})
+		brokerApp.Use(recover.New())
+		brokerApp.Get("/health", func(c fiber.Ctx) error {
+			return c.JSON(fiber.Map{"status": "ok", "service": "broker"})
+		})
+		brokerApp.All("/broker/:integration/*", gw.Handler())
+
+		go func() {
+			if err := brokerApp.Listen(cfg.Broker.Listen); err != nil {
+				log.Errorf("Broker gateway error: %v", err)
+			}
+		}()
+		log.Infof("Broker gateway enabled on %s (mode=%s, fail_behavior=%s)", cfg.Broker.Listen, cfg.Broker.Mode, cfg.Broker.FailBehavior)
+		log.Infof("Managed integrations: %v", matcher.Integrations())
+	}
 
 	go func() {
 		if err := app.Listen(cfg.Listen); err != nil {
@@ -342,6 +450,12 @@ func main() {
 	if collector != nil {
 		if err := collector.Close(); err != nil {
 			log.Errorf("Telemetry shutdown error: %v", err)
+		}
+	}
+
+	if brokerApp != nil {
+		if err := brokerApp.ShutdownWithContext(shutdownCtx); err != nil {
+			log.Errorf("Broker gateway shutdown error: %v", err)
 		}
 	}
 

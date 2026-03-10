@@ -11,6 +11,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
+	"github.com/dylanp12/parachute/internal/broker"
 	"github.com/dylanp12/parachute/internal/config"
 	"github.com/dylanp12/parachute/internal/egress"
 )
@@ -28,16 +29,19 @@ import (
 type ForwardProxy struct {
 	egress  *egress.Filter
 	cfg     *config.Config
+	matcher *broker.IntegrationMatcher // nil when broker is disabled
 	dialer  *net.Dialer
 	timeout time.Duration
 	onEvent func(actionType, target, decision, rulePath, enforcementMode string)
 }
 
-// NewForwardProxy creates a new forward proxy instance
-func NewForwardProxy(cfg *config.Config, onEvent func(string, string, string, string, string)) *ForwardProxy {
+// NewForwardProxy creates a new forward proxy instance.
+// matcher may be nil when the broker is disabled.
+func NewForwardProxy(cfg *config.Config, matcher *broker.IntegrationMatcher, onEvent func(string, string, string, string, string)) *ForwardProxy {
 	return &ForwardProxy{
 		egress:  egress.New(&cfg.Egress),
 		cfg:     cfg,
+		matcher: matcher,
 		dialer:  &net.Dialer{Timeout: 30 * time.Second},
 		timeout: 60 * time.Second,
 		onEvent: onEvent,
@@ -56,12 +60,57 @@ func (fp *ForwardProxy) isRecordMode() bool {
 	return fp.cfg.Egress.Mode == "record"
 }
 
+// checkManagedHost checks if a hostname belongs to a managed integration.
+// Returns the integration name if blocked, empty string if allowed.
+// In "enforce" mode, this blocks the request. In "record" mode, it logs but allows.
+func (fp *ForwardProxy) checkManagedHost(hostname string) (integration string, blocked bool) {
+	if fp.matcher == nil || fp.cfg.Broker.Mode != "enforce" && fp.cfg.Broker.Mode != "record" {
+		return "", false
+	}
+
+	match := fp.matcher.Match(hostname)
+	if match == nil {
+		return "", false
+	}
+
+	fp.emitEvent("broker_egress_block", hostname, "deny", "broker/"+match.Integration+"/direct_access_blocked")
+	log.Warnf("[BROKER:BLOCKED] Direct access to managed integration %q (%s) denied", match.Integration, hostname)
+
+	if fp.cfg.Broker.Mode == "record" {
+		return match.Integration, false
+	}
+	return match.Integration, true
+}
+
+// managedHostGuidance returns a human-readable message guiding the agent to use the broker gateway.
+func (fp *ForwardProxy) managedHostGuidance(integration string) string {
+	listen := fp.cfg.Broker.Listen
+	return fmt.Sprintf(
+		"Direct access to managed integration %q is blocked.\n"+
+			"Configure your agent to use: http://parachute%s/broker/%s/\n"+
+			"Example: Set GITHUB_API_URL=http://parachute%s/broker/%s in agent container.\n",
+		integration, listen, integration, listen, integration,
+	)
+}
+
 // Handler returns the Fiber handler for forward proxying
 // This handles regular HTTP requests (non-CONNECT)
 func (fp *ForwardProxy) Handler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Extract target URL from the request
 		targetURL := string(c.Request().URI().FullURI())
+
+		// Check if host belongs to a managed integration (broker enforcement)
+		fiberHost := string(c.Request().URI().Host())
+		if idx := strings.LastIndex(fiberHost, ":"); idx != -1 {
+			fiberHost = fiberHost[:idx]
+		}
+		if integration, blocked := fp.checkManagedHost(fiberHost); blocked {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error":   "direct access to managed integration blocked",
+				"message": fp.managedHostGuidance(integration),
+			})
+		}
 
 		// Check if domain is allowed
 		result := fp.egress.CheckURL(targetURL)
@@ -167,6 +216,13 @@ func (fp *ForwardProxy) HandleConnect(clientConn net.Conn, host string) {
 		hostname = host[:idx]
 	}
 
+	// Check if host belongs to a managed integration (broker enforcement)
+	if integration, blocked := fp.checkManagedHost(hostname); blocked {
+		guidance := fp.managedHostGuidance(integration)
+		clientConn.Write([]byte("HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\n" + guidance))
+		return
+	}
+
 	// Check if domain is allowed
 	result := fp.egress.CheckURL("https://" + hostname)
 	if !result.Allowed {
@@ -217,10 +273,11 @@ type ProxyServer struct {
 	listener net.Listener
 }
 
-// NewProxyServer creates a new proxy server
-func NewProxyServer(cfg *config.Config, onEvent func(string, string, string, string, string)) *ProxyServer {
+// NewProxyServer creates a new proxy server.
+// matcher may be nil when the broker is disabled.
+func NewProxyServer(cfg *config.Config, matcher *broker.IntegrationMatcher, onEvent func(string, string, string, string, string)) *ProxyServer {
 	return &ProxyServer{
-		fp: NewForwardProxy(cfg, onEvent),
+		fp: NewForwardProxy(cfg, matcher, onEvent),
 	}
 }
 
@@ -284,6 +341,27 @@ func (ps *ProxyServer) handleHTTPRequest(conn net.Conn, req *http.Request) {
 	targetURL := req.URL.String()
 	if !req.URL.IsAbs() {
 		targetURL = "http://" + req.Host + req.URL.RequestURI()
+	}
+
+	// Check if host belongs to a managed integration (broker enforcement)
+	httpHost := req.Host
+	if idx := strings.LastIndex(httpHost, ":"); idx != -1 {
+		httpHost = httpHost[:idx]
+	}
+	if integration, blocked := ps.fp.checkManagedHost(httpHost); blocked {
+		guidance := ps.fp.managedHostGuidance(integration)
+		resp := &http.Response{
+			StatusCode: 403,
+			Status:     "403 Forbidden",
+			Proto:      "HTTP/1.1",
+			ProtoMajor: 1,
+			ProtoMinor: 1,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(guidance)),
+		}
+		resp.Header.Set("Content-Type", "text/plain")
+		resp.Write(conn)
+		return
 	}
 
 	// Check if domain is allowed

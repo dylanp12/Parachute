@@ -44,11 +44,34 @@ type TelemetryConfig struct {
 	} `yaml:"heartbeat"`
 }
 
+// BrokerIntegrationConfig defines a single managed integration for credential brokerage.
+type BrokerIntegrationConfig struct {
+	Name             string   `yaml:"name"`              // e.g., "github"
+	Hosts            []string `yaml:"hosts"`             // e.g., ["api.github.com"]
+	Enabled          bool     `yaml:"enabled"`
+	CredentialSource string   `yaml:"credential_source"` // "dev_static", "pro", or empty
+	StaticTokenEnv   string   `yaml:"static_token_env"`  // env var for dev_static source
+	HeaderName       string   `yaml:"header_name"`       // default "Authorization"
+	TokenPrefix      string   `yaml:"token_prefix"`      // default "Bearer "
+}
+
+// BrokerConfig controls the credential broker gateway.
+type BrokerConfig struct {
+	Enabled      bool                      `yaml:"enabled"`
+	Listen       string                    `yaml:"listen"`        // dedicated internal listener (default ":8081")
+	Mode         string                    `yaml:"mode"`          // "off", "record", "enforce"
+	FailBehavior string                    `yaml:"fail_behavior"` // "closed" (default) or "open"
+	Integrations []BrokerIntegrationConfig `yaml:"integrations"`
+	ProURL       string                    `yaml:"pro_url"`     // Pro control plane URL (for credential_source: "pro")
+	APIKeyEnv    string                    `yaml:"api_key_env"` // env var for Pro API key
+}
+
 // Config is the root configuration structure
 type Config struct {
 	Auth         AuthConfig         `yaml:"auth"`
 	RiskPolicy   RiskPolicyConfig   `yaml:"risk_policy"`
 	Egress       EgressConfig       `yaml:"egress"`
+	Broker       BrokerConfig       `yaml:"broker"`
 	Relay        RelayConfig        `yaml:"relay"`
 	Storage      StorageConfig      `yaml:"storage"`
 	MCP          MCPConfig          `yaml:"mcp"`
@@ -285,6 +308,17 @@ func Load(path string) (*Config, error) {
 	// Egress mode defaults
 	if cfg.Egress.Mode == "" {
 		cfg.Egress.Mode = "enforce"
+	}
+
+	// Broker defaults
+	if cfg.Broker.Listen == "" {
+		cfg.Broker.Listen = ":8081"
+	}
+	if cfg.Broker.Mode == "" {
+		cfg.Broker.Mode = "off"
+	}
+	if cfg.Broker.FailBehavior == "" {
+		cfg.Broker.FailBehavior = "closed"
 	}
 	// Convert legacy allow_domains to structured rule
 	if len(cfg.Egress.AllowDomains) > 0 && len(cfg.Egress.Rules) == 0 {
