@@ -9,8 +9,8 @@ keywords:
   - agent-security
   - sidecar
   - proxy
-home: https://github.com/parachute-security/parachute
+home: https://github.com/dylanp12/parachute
 sources:
-  - https://github.com/parachute-security/parachute
+  - https://github.com/dylanp12/parachute
 maintainers:
   - name: Parachute Security

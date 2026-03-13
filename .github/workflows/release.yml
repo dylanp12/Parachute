@@ -8,7 +8,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  DOCKERHUB_IMAGE: parachutesecurity/parachute
+  DOCKERHUB_IMAGE: dylanp12/parachute
 
 jobs:
   release:

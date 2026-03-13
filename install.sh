@@ -1,13 +1,13 @@
 #!/bin/sh
 # Parachute Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/parachute-security/parachute/main/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/dylanp12/parachute/main/install.sh | sh
 # Options:
 #   --demo    Start demo mode after installation (requires Docker)
 #   --binary  Force binary installation (skip Docker)
 
 set -e
 
-REPO="parachute-security/parachute"
+REPO="dylanp12/parachute"
 BINARY_NAME="parachute"
 INSTALL_DIR="/usr/local/bin"
 DEMO_MODE=false
@@ -115,8 +115,8 @@ install_binary() {
 # Install via Docker
 install_docker() {
     echo "Pulling Parachute Docker image..."
-    docker pull parachutesecurity/parachute:latest
-    echo "Docker image pulled: parachutesecurity/parachute:latest"
+    docker pull dylanp12/parachute:latest
+    echo "Docker image pulled: dylanp12/parachute:latest"
 }
 
 # Generate default config
@@ -216,7 +216,7 @@ main() {
         generate_config
         echo ""
         echo "Quick start:"
-        echo "  docker run -p 8080:8080 -p 8888:8888 parachutesecurity/parachute:latest"
+        echo "  docker run -p 8080:8080 -p 8888:8888 dylanp12/parachute:latest"
         echo ""
         echo "Demo mode:"
         echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | sh -s -- --demo"

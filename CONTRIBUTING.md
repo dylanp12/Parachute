@@ -10,7 +10,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ### Reporting Bugs
 
-1. Check if the bug has already been reported in [Issues](https://github.com/parachute-security/parachute/issues)
+1. Check if the bug has already been reported in [Issues](https://github.com/dylanp12/parachute/issues)
 2. If not, create a new issue using the bug report template
 3. Include:
    - Clear description of the problem
@@ -20,7 +20,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ### Suggesting Features
 
-1. Check existing [Issues](https://github.com/parachute-security/parachute/issues) and [Discussions](https://github.com/parachute-security/parachute/discussions)
+1. Check existing [Issues](https://github.com/dylanp12/parachute/issues) and [Discussions](https://github.com/dylanp12/parachute/discussions)
 2. Open a feature request issue with:
    - Clear use case description
    - Proposed solution (if any)
@@ -82,7 +82,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ## Questions?
 
-- Open a [Discussion](https://github.com/parachute-security/parachute/discussions)
-- Check the [Documentation](https://github.com/parachute-security/parachute#readme)
+- Open a [Discussion](https://github.com/dylanp12/parachute/discussions)
+- Check the [Documentation](https://github.com/dylanp12/parachute#readme)
 
 Thank you for contributing! 🪂
