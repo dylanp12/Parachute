@@ -28,6 +28,7 @@ WORKDIR /app
 COPY --from=builder /parachute /app/parachute
 
 RUN mkdir -p /etc/parachute && chown parachute:parachute /etc/parachute
+RUN mkdir -p /var/lib/parachute && chown parachute:parachute /var/lib/parachute
 
 USER parachute
 

@@ -5,6 +5,13 @@
 # - docs/openclaw-integration.md - OpenClaw gateway setup
 # - docs/pii-detection.md - PII scanning limitations and recommendations
 
+# DEPRECATED: Reverse proxy tool interception
+# The reverse proxy still forwards HTTP traffic but no longer intercepts tool calls by default.
+# Use the MCP gateway (mcp.enabled=true) for tool-call policy enforcement.
+# reverse_proxy:
+#   tool_interception:
+#     enabled: false  # default; set true only for legacy compatibility
+
 auth:
   username: "admin"
   password_env: "PARACHUTE_PASSWORD"  # Read password from this env var
@@ -31,28 +38,83 @@ risk_policy:
     - "\\bgit\\b.*(push|force)"        # Git push/force operations
 
 egress:
-  # Allowed domains for outbound requests (empty = block all)
-  # NOTE: Only domain filtering works for HTTPS; PII scanning requires plaintext HTTP
-  allow_domains:
-    - "api.anthropic.com"
-    - "api.openai.com"
-    - "github.com"
-    - "*.githubusercontent.com"
-    - "pypi.org"
-    - "npmjs.com"
+  mode: "enforce"  # "enforce" (default) or "record" (log only, don't block)
+  # Structured rules (preferred)
+  rules:
+    - domains:
+        - "api.anthropic.com"
+        - "*.anthropic.com"
+        - "api.openai.com"
+      label: "llm-providers"
+      action: "allow"
+    - domains:
+        - "github.com"
+        - "*.githubusercontent.com"
+      label: "code-hosting"
+      action: "allow"
+    - domains:
+        - "pypi.org"
+        - "npmjs.com"
+        - "registry.npmjs.org"
+      label: "package-registries"
+      action: "allow"
+
+  # Legacy flat list (auto-converted to rule with label "legacy")
+  # allow_domains:
+  #   - "api.anthropic.com"
 
   # PII patterns to detect and block
-  # WARNING: These patterns are ONLY checked for:
-  #   - Plaintext HTTP requests through forward proxy
-  #   - Request bodies sent through reverse proxy (/proxy/*)
-  # HTTPS CONNECT tunnels are NOT inspected (encrypted end-to-end)
-  # See docs/pii-detection.md for details
   pii_patterns:
     - "\\b4[0-9]{12}(?:[0-9]{3})?\\b"   # Visa card numbers
     - "\\b5[1-5][0-9]{14}\\b"           # Mastercard numbers
     - "-----BEGIN (?:RSA |DSA |EC |OPENSSH )?PRIVATE KEY-----"  # Private keys
     - "AKIA[0-9A-Z]{16}"                # AWS Access Key ID
     - "gh[pous]_[a-zA-Z0-9]{36}"        # GitHub tokens
+
+# Telemetry: SDR event recording and upload to Parachute Pro
+telemetry:
+  enabled: false
+  agent_id: ""       # Auto-generated UUID if empty
+  tenant_id: ""      # Your organization ID from Parachute Pro
+  chain_state_path: "/var/lib/parachute/chain_state.json"
+  # Signing: Ed25519 signing of SDR records for evidence-grade guarantees.
+  # Generate keys with: parachute-keygen --private sidecar.key --public sidecar.pub
+  # Copy sidecar.pub to Pro's trusted_keys_dir.
+  # signing:
+  #   key_path: "/etc/parachute/sidecar.key"
+  #   key_id: ""  # Auto-derived from public key if empty
+  jsonl:
+    path: "/var/lib/parachute/events.jsonl"
+  # HTTP upload to Parachute Pro (requires Pro URL and API key)
+  # http:
+  #   url: "https://pro.example.com/v1/ingest/sdr-batch"
+  #   api_key_env: "PARACHUTE_PRO_API_KEY"
+  #   batch_size: 50
+  #   flush_interval: "10s"
+  #   offset_path: "/var/lib/parachute/upload_offset"
+  # heartbeat:
+  #   interval: "30s"
+
+# Credential Broker Gateway
+# The broker enables credentialless agent access to managed integrations.
+# Agents call APIs with zero credentials; Parachute brokers access through
+# policy-controlled credential injection on a dedicated internal listener.
+# broker:
+#   enabled: false
+#   listen: ":8081"            # Dedicated internal-only listener (no auth -- network segmentation is the trust boundary)
+#   mode: "off"                # "off" (disabled), "record" (log only), "enforce" (block direct access)
+#   fail_behavior: "closed"    # "closed" (deny on failure) or "open" (passthrough)
+#   integrations:
+#     - name: "github"
+#       hosts: ["api.github.com", "uploads.github.com"]
+#       enabled: true
+#       credential_source: "dev_static"  # "dev_static" (env var) or "pro" (Pro control plane)
+#       static_token_env: "GITHUB_TOKEN" # only for credential_source: dev_static
+#       # header_name: "Authorization"   # default
+#       # token_prefix: "Bearer "        # default
+#   # Pro connection (for credential_source: "pro")
+#   # pro_url: "https://pro.example.com"
+#   # api_key_env: "PARACHUTE_PRO_API_KEY"
 
 relay:
   enabled: false
@@ -62,7 +124,8 @@ relay:
 # MCP (Model Context Protocol) proxy configuration
 # mcp:
 #   enabled: false
-#   listen: ":9090"                      # MCP proxy listen address
+#   listen: ":9090"
+#   policy_template: "claude-code"     # Pre-built: "claude-code", "restrictive", "permissive"
 #   default_policy:
 #     require_approval:
 #       - "execute_bash"
@@ -79,6 +142,7 @@ relay:
 #   upstreams:
 #     - name: "filesystem-server"
 #       url: "http://localhost:3001"
+#       transport: "http"              # "http" (default) or "stdio" (not yet implemented)
 
 # Webhook notifications for pending approvals
 # webhooks:
@@ -89,7 +153,7 @@ relay:
 
 # License key for Parachute Pro features (cloud relay, fleet dashboard, etc.)
 # license:
-#   key_env: "PARACHUTE_LICENSE_KEY"     # Read from environment variable
+#   key_env: "PARACHUTE_LICENSE_KEY"
 
 # Storage configuration
 storage:
@@ -97,6 +161,6 @@ storage:
   path: "/var/lib/parachute/parachute.db"  # Required if type is "sqlite"
 
 # Server configuration
-upstream: "http://openclaw:3000"    # Agent container address
+upstream: "http://openclaw:3000"    # Agent container address (used for all reverse proxy forwarding)
 listen: ":8080"                     # Main API/Dashboard port
 proxy_listen: ":8888"               # Forward proxy port for agent egress

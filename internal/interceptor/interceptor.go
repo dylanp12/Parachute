@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/parachute-security/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/config"
 )
 
 // ToolCall represents a parsed tool call from the LLM

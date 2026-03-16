@@ -1,6 +1,6 @@
 # Parachute Makefile
 
-.PHONY: all build build-verify test test-unit test-integration clean docker docker-up docker-down docker-demo demo demo-down lint fmt helm-lint help
+.PHONY: all build build-verify test test-unit test-integration clean docker docker-up docker-down docker-demo demo demo-down lint fmt helm-lint demo-telemetry demo-telemetry-down demo-telemetry-logs demo-telemetry-test help
 
 # Build variables
 BINARY_NAME=parachute
@@ -131,6 +131,7 @@ clean: ## Clean build artifacts
 	rm -f coverage.out coverage.html
 	cd tests/integration && docker compose -f docker-compose.test.yml down -v 2>/dev/null || true
 	docker compose -f docker-compose.demo.yml down -v 2>/dev/null || true
+	docker compose -f docker-compose.telemetry-demo.yml down -v 2>/dev/null || true
 
 deps: ## Download dependencies
 	$(GOCMD) mod download
@@ -138,6 +139,32 @@ deps: ## Download dependencies
 
 generate: ## Run go generate
 	$(GOCMD) generate ./...
+
+## Telemetry demo targets
+
+demo-telemetry: ## Start telemetry pipeline demo (sidecar + Pro + Postgres)
+	docker compose -f docker-compose.telemetry-demo.yml up --build -d
+	@echo ""
+	@echo "Waiting for stack to be ready..."
+	@sleep 10
+	@echo ""
+	@echo "Stack is ready!"
+	@echo "  Sidecar dashboard: http://localhost:8080/dashboard/"
+	@echo "  Pro control plane: http://localhost:8443"
+	@echo ""
+	@echo "Send a test MCP tool call:"
+	@echo '  curl -u admin:demo -X POST http://localhost:8080/mcp \'
+	@echo '    -H "Content-Type: application/json" \'
+	@echo '    -d '"'"'{"jsonrpc":"2.0","method":"tools/call","params":{"name":"Read","arguments":{"path":"/tmp/test"}},"id":1}'"'"''
+
+demo-telemetry-down: ## Stop telemetry pipeline demo
+	docker compose -f docker-compose.telemetry-demo.yml down -v
+
+demo-telemetry-logs: ## Show telemetry demo logs
+	docker compose -f docker-compose.telemetry-demo.yml logs -f
+
+demo-telemetry-test: ## Run telemetry integration test
+	./tests/integration/telemetry_test.sh
 
 ## Help
 

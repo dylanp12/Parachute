@@ -9,28 +9,89 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ReverseProxyConfig controls the reverse proxy behavior
+type ReverseProxyConfig struct {
+	ToolInterception ToolInterceptionConfig `yaml:"tool_interception"`
+}
+
+// ToolInterceptionConfig controls tool-call interception in the reverse proxy
+type ToolInterceptionConfig struct {
+	Enabled bool `yaml:"enabled"` // default false
+}
+
+// TelemetryConfig controls SDR event emission
+type TelemetryConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	AgentID        string `yaml:"agent_id"`
+	TenantID       string `yaml:"tenant_id"`
+	ChainStatePath string `yaml:"chain_state_path"`
+	Signing        struct {
+		KeyPath string `yaml:"key_path"` // Path to Ed25519 private key (PEM or raw)
+		KeyID   string `yaml:"key_id"`   // Optional override; derived from public key if empty
+	} `yaml:"signing"`
+	JSONL struct {
+		Path string `yaml:"path"`
+	} `yaml:"jsonl"`
+	HTTP struct {
+		URL           string `yaml:"url"`
+		APIKeyEnv     string `yaml:"api_key_env"`
+		BatchSize     int    `yaml:"batch_size"`
+		FlushInterval string `yaml:"flush_interval"`
+		OffsetPath    string `yaml:"offset_path"`
+	} `yaml:"http"`
+	Heartbeat struct {
+		Interval string `yaml:"interval"`
+	} `yaml:"heartbeat"`
+}
+
+// BrokerIntegrationConfig defines a single managed integration for credential brokerage.
+type BrokerIntegrationConfig struct {
+	Name             string   `yaml:"name"`              // e.g., "github"
+	Hosts            []string `yaml:"hosts"`             // e.g., ["api.github.com"]
+	Enabled          bool     `yaml:"enabled"`
+	CredentialSource string   `yaml:"credential_source"` // "dev_static", "pro", or empty
+	StaticTokenEnv   string   `yaml:"static_token_env"`  // env var for dev_static source
+	HeaderName       string   `yaml:"header_name"`       // default "Authorization"
+	TokenPrefix      string   `yaml:"token_prefix"`      // default "Bearer "
+}
+
+// BrokerConfig controls the credential broker gateway.
+type BrokerConfig struct {
+	Enabled      bool                      `yaml:"enabled"`
+	Listen       string                    `yaml:"listen"`        // dedicated internal listener (default ":8081")
+	Mode         string                    `yaml:"mode"`          // "off", "record", "enforce"
+	FailBehavior string                    `yaml:"fail_behavior"` // "closed" (default) or "open"
+	Integrations []BrokerIntegrationConfig `yaml:"integrations"`
+	ProURL       string                    `yaml:"pro_url"`     // Pro control plane URL (for credential_source: "pro")
+	APIKeyEnv    string                    `yaml:"api_key_env"` // env var for Pro API key
+}
+
 // Config is the root configuration structure
 type Config struct {
-	Auth        AuthConfig       `yaml:"auth"`
-	RiskPolicy  RiskPolicyConfig `yaml:"risk_policy"`
-	Egress      EgressConfig     `yaml:"egress"`
-	Relay       RelayConfig      `yaml:"relay"`
-	Storage     StorageConfig    `yaml:"storage"`
-	MCP         MCPConfig        `yaml:"mcp"`
-	Webhooks    []WebhookConfig  `yaml:"webhooks"`
-	License     LicenseConfig    `yaml:"license"`
-	Upstream    string           `yaml:"upstream"`
-	Listen      string           `yaml:"listen"`
-	ProxyListen string           `yaml:"proxy_listen"` // Forward proxy listen address for agent egress
+	Auth         AuthConfig         `yaml:"auth"`
+	RiskPolicy   RiskPolicyConfig   `yaml:"risk_policy"`
+	Egress       EgressConfig       `yaml:"egress"`
+	Broker       BrokerConfig       `yaml:"broker"`
+	Relay        RelayConfig        `yaml:"relay"`
+	Storage      StorageConfig      `yaml:"storage"`
+	MCP          MCPConfig          `yaml:"mcp"`
+	ReverseProxy ReverseProxyConfig `yaml:"reverse_proxy"`
+	Telemetry    TelemetryConfig    `yaml:"telemetry"`
+	Webhooks     []WebhookConfig    `yaml:"webhooks"`
+	License      LicenseConfig      `yaml:"license"`
+	Upstream     string             `yaml:"upstream"`
+	Listen       string             `yaml:"listen"`
+	ProxyListen  string             `yaml:"proxy_listen"` // Forward proxy listen address for agent egress
 }
 
 // MCPConfig defines Model Context Protocol proxy settings
 type MCPConfig struct {
-	Enabled       bool                       `yaml:"enabled"`
-	Listen        string                     `yaml:"listen"`         // MCP proxy listen address (e.g. ":9090")
-	DefaultPolicy MCPServerPolicy            `yaml:"default_policy"`
-	Servers       map[string]MCPServerPolicy `yaml:"servers"`
-	Upstreams     []MCPUpstreamConfig        `yaml:"upstreams"`
+	Enabled        bool                       `yaml:"enabled"`
+	Listen         string                     `yaml:"listen"`          // MCP proxy listen address (e.g. ":9090")
+	PolicyTemplate string                     `yaml:"policy_template"` // "claude-code", "restrictive", "permissive"
+	DefaultPolicy  MCPServerPolicy            `yaml:"default_policy"`
+	Servers        map[string]MCPServerPolicy `yaml:"servers"`
+	Upstreams      []MCPUpstreamConfig        `yaml:"upstreams"`
 }
 
 // MCPServerPolicy defines per-server MCP policy rules
@@ -43,8 +104,10 @@ type MCPServerPolicy struct {
 
 // MCPUpstreamConfig defines an upstream MCP server
 type MCPUpstreamConfig struct {
-	Name string `yaml:"name"`
-	URL  string `yaml:"url"`
+	Name      string `yaml:"name"`
+	URL       string `yaml:"url"`
+	Transport string `yaml:"transport"` // "http" (default) or "stdio" (not implemented)
+	Command   string `yaml:"command"`   // for stdio, stored but not used yet
 }
 
 // WebhookConfig defines a notification endpoint
@@ -143,10 +206,19 @@ func (r *RiskPolicyConfig) RequiresApproval(cmd string) bool {
 	return false
 }
 
+// EgressRule defines a structured egress rule with label and action.
+type EgressRule struct {
+	Domains []string `yaml:"domains"`
+	Label   string   `yaml:"label"`
+	Action  string   `yaml:"action"` // "allow"
+}
+
 // EgressConfig defines outbound traffic controls
 type EgressConfig struct {
-	AllowDomains []string `yaml:"allow_domains"` // Whitelisted domains
-	PIIPatterns  []string `yaml:"pii_patterns"`  // Regex patterns for PII detection
+	Mode         string       `yaml:"mode"`          // "enforce" (default) or "record"
+	AllowDomains []string     `yaml:"allow_domains"` // legacy flat list (backward compat)
+	Rules        []EgressRule `yaml:"rules"`         // structured rules
+	PIIPatterns  []string     `yaml:"pii_patterns"`  // Regex patterns for PII detection
 	piiRegexes   []*regexp.Regexp
 }
 
@@ -225,6 +297,36 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Storage.Path == "" {
 		cfg.Storage.Path = "/var/lib/parachute/parachute.db"
+	}
+	if cfg.Telemetry.ChainStatePath == "" {
+		cfg.Telemetry.ChainStatePath = "/var/lib/parachute/chain_state.json"
+	}
+	if cfg.Telemetry.JSONL.Path == "" {
+		cfg.Telemetry.JSONL.Path = "/var/lib/parachute/events.jsonl"
+	}
+
+	// Egress mode defaults
+	if cfg.Egress.Mode == "" {
+		cfg.Egress.Mode = "enforce"
+	}
+
+	// Broker defaults
+	if cfg.Broker.Listen == "" {
+		cfg.Broker.Listen = ":8081"
+	}
+	if cfg.Broker.Mode == "" {
+		cfg.Broker.Mode = "off"
+	}
+	if cfg.Broker.FailBehavior == "" {
+		cfg.Broker.FailBehavior = "closed"
+	}
+	// Convert legacy allow_domains to structured rule
+	if len(cfg.Egress.AllowDomains) > 0 && len(cfg.Egress.Rules) == 0 {
+		cfg.Egress.Rules = []EgressRule{{
+			Domains: cfg.Egress.AllowDomains,
+			Label:   "legacy",
+			Action:  "allow",
+		}}
 	}
 
 	// Compile regex patterns

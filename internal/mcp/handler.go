@@ -9,24 +9,46 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/client"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/approval"
-	"github.com/parachute-security/parachute/internal/audit"
-	"github.com/parachute-security/parachute/internal/metrics"
+	"github.com/dylanp12/parachute/internal/approval"
+	"github.com/dylanp12/parachute/internal/audit"
+	"github.com/dylanp12/parachute/internal/metrics"
 )
+
+// TelemetryHook carries event data for telemetry emission.
+type TelemetryHook struct {
+	ActionType      string
+	ActionTarget    string
+	Decision        string
+	RulePath        string
+	EnforcementMode string
+	SpanID          string
+	ParentSpanID    string
+	Approval        *ApprovalHook
+}
+
+// ApprovalHook carries approval details for telemetry emission.
+type ApprovalHook struct {
+	ID           string
+	ApproverID   string
+	ApproverType string
+	Source       string
+}
 
 // Handler processes MCP JSON-RPC requests, applying policy and HITL
 type Handler struct {
 	policy    *PolicyEngine
 	approvalQ *approval.Queue
 	notifier  *approval.Notifier
+	onEvent   func(event TelemetryHook)
 }
 
 // NewHandler creates a new MCP request handler
-func NewHandler(policy *PolicyEngine, approvalQ *approval.Queue, notifier *approval.Notifier) *Handler {
+func NewHandler(policy *PolicyEngine, approvalQ *approval.Queue, notifier *approval.Notifier, onEvent func(TelemetryHook)) *Handler {
 	return &Handler{
 		policy:    policy,
 		approvalQ: approvalQ,
 		notifier:  notifier,
+		onEvent:   onEvent,
 	}
 }
 
@@ -44,9 +66,9 @@ func (h *Handler) HandleJSONRPC(c fiber.Ctx) error {
 
 	m := metrics.Get()
 
-	// Non-sensitive methods pass through
+	// Non-sensitive methods pass through to upstream
 	if !IsSensitiveMethod(req.Method) {
-		return c.Next()
+		return nil
 	}
 
 	correlationID := c.Get("X-Correlation-ID")
@@ -58,7 +80,7 @@ func (h *Handler) HandleJSONRPC(c fiber.Ctx) error {
 	case MethodResourcesRead:
 		return h.handleResourcesRead(c, req, correlationID, serverName, m)
 	default:
-		return c.Next()
+		return nil
 	}
 }
 
@@ -71,6 +93,23 @@ func (h *Handler) handleToolsCall(c fiber.Ctx, req *JSONRPCRequest, correlationI
 	m.MCPToolCallsTotal.Add(1)
 
 	result := h.policy.CheckToolCall(tc, serverName)
+
+	if h.onEvent != nil {
+		decision := "allow"
+		switch result.Action {
+		case ActionBlock:
+			decision = "deny"
+		case ActionPending:
+			decision = "pending"
+		}
+		h.onEvent(TelemetryHook{
+			ActionType:      "mcp_tool_call",
+			ActionTarget:    tc.Name,
+			Decision:        decision,
+			RulePath:        result.RulePath,
+			EnforcementMode: "enforce",
+		})
+	}
 
 	switch result.Action {
 	case ActionBlock:
@@ -99,7 +138,7 @@ func (h *Handler) handleToolsCall(c fiber.Ctx, req *JSONRPCRequest, correlationI
 			ToolName:      tc.Name,
 			Details:       map[string]string{"mcp_server": serverName},
 		})
-		return c.Next()
+		return nil // allow caller to forward to upstream
 	}
 }
 
@@ -143,6 +182,18 @@ func (h *Handler) handleApproval(c fiber.Ctx, req *JSONRPCRequest, tc *ToolCallP
 			Command:       cmdStr,
 			Details:       map[string]string{"mcp_server": serverName},
 		})
+		if h.onEvent != nil {
+			h.onEvent(TelemetryHook{
+				ActionType:      "mcp_tool_call",
+				ActionTarget:    tc.Name,
+				Decision:        "allow",
+				RulePath:        result.RulePath,
+				EnforcementMode: "enforce",
+				Approval: &ApprovalHook{
+					ID: pc.ID,
+				},
+			})
+		}
 		return c.Next()
 
 	case approval.DecisionDenied:
@@ -155,6 +206,18 @@ func (h *Handler) handleApproval(c fiber.Ctx, req *JSONRPCRequest, tc *ToolCallP
 			Command:       cmdStr,
 			Details:       map[string]string{"mcp_server": serverName},
 		})
+		if h.onEvent != nil {
+			h.onEvent(TelemetryHook{
+				ActionType:      "mcp_tool_call",
+				ActionTarget:    tc.Name,
+				Decision:        "deny",
+				RulePath:        result.RulePath,
+				EnforcementMode: "enforce",
+				Approval: &ApprovalHook{
+					ID: pc.ID,
+				},
+			})
+		}
 		return c.Status(403).JSON(NewErrorResponse(req.ID, ErrCodeServerError, "tool call denied by approver", map[string]string{
 			"tool":   tc.Name,
 			"id":     pc.ID,
@@ -172,6 +235,18 @@ func (h *Handler) handleApproval(c fiber.Ctx, req *JSONRPCRequest, tc *ToolCallP
 			Reason:        "approval timed out",
 			Details:       map[string]string{"mcp_server": serverName},
 		})
+		if h.onEvent != nil {
+			h.onEvent(TelemetryHook{
+				ActionType:      "mcp_tool_call",
+				ActionTarget:    tc.Name,
+				Decision:        "deny",
+				RulePath:        result.RulePath,
+				EnforcementMode: "enforce",
+				Approval: &ApprovalHook{
+					ID: pc.ID,
+				},
+			})
+		}
 		return c.Status(408).JSON(NewErrorResponse(req.ID, ErrCodeServerError,
 			fmt.Sprintf("tool call blocked: approval timed out for %s", tc.Name), map[string]string{
 				"tool":   tc.Name,
@@ -190,6 +265,21 @@ func (h *Handler) handleResourcesRead(c fiber.Ctx, req *JSONRPCRequest, correlat
 	m.MCPResourceReads.Add(1)
 
 	result := h.policy.CheckResourceRead(rr, serverName)
+
+	if h.onEvent != nil {
+		decision := "allow"
+		if result.Action == ActionBlock {
+			decision = "deny"
+		}
+		h.onEvent(TelemetryHook{
+			ActionType:      "mcp_resource_read",
+			ActionTarget:    rr.URI,
+			Decision:        decision,
+			RulePath:        result.RulePath,
+			EnforcementMode: "enforce",
+		})
+	}
+
 	if result.Action == ActionBlock {
 		audit.DefaultLogger.Log(&audit.Event{
 			EventType:     audit.EventMCPResourceBlock,

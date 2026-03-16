@@ -16,10 +16,10 @@ import (
 	fiberwebsocket "github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/approval"
-	"github.com/parachute-security/parachute/internal/config"
-	"github.com/parachute-security/parachute/internal/egress"
-	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/dylanp12/parachute/internal/approval"
+	"github.com/dylanp12/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/egress"
+	"github.com/dylanp12/parachute/internal/interceptor"
 )
 
 // Proxy handles proxying requests to the upstream agent
@@ -80,23 +80,25 @@ func (p *Proxy) Handler() fiber.Handler {
 			}
 		}
 
-		// Check for OpenClaw tools/invoke endpoint
-		path := c.Path()
-		if strings.HasSuffix(path, "/tools/invoke") || strings.Contains(path, "/tools/invoke") {
-			return p.handleOpenClawToolInvoke(c, body)
-		}
-
-		// Try to intercept tool calls
-		if len(body) > 0 {
-			blocked, err := p.checkToolCalls(c.Context(), body)
-			if err != nil {
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+		if p.cfg.ReverseProxy.ToolInterception.Enabled {
+			// Check for OpenClaw tools/invoke endpoint
+			path := c.Path()
+			if strings.HasSuffix(path, "/tools/invoke") || strings.Contains(path, "/tools/invoke") {
+				return p.handleOpenClawToolInvoke(c, body)
 			}
-			if blocked {
-				return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-					"error":  "command blocked by policy",
-					"reason": "command matches block list or was denied",
-				})
+
+			// Try to intercept tool calls
+			if len(body) > 0 {
+				blocked, err := p.checkToolCalls(c.Context(), body)
+				if err != nil {
+					return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+				}
+				if blocked {
+					return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+						"error":  "command blocked by policy",
+						"reason": "command matches block list or was denied",
+					})
+				}
 			}
 		}
 

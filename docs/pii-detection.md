@@ -117,7 +117,7 @@ For environments requiring HTTPS content inspection:
 ### Check Content for PII
 
 ```go
-import "github.com/parachute-security/parachute/internal/egress"
+import "github.com/dylanp12/parachute/internal/egress"
 
 filter := egress.New(&config.Egress)
 result := filter.CheckContent(content)

@@ -1,0 +1,89 @@
+# Parachute Telemetry Pipeline Demo
+#
+# Demonstrates end-to-end telemetry: sidecar -> JSONL -> HTTP batch -> Pro -> Postgres
+#
+# Run: docker compose -f docker-compose.telemetry-demo.yml up --build
+#
+# Test:
+#   curl -u admin:demo -X POST http://localhost:8080/mcp \
+#     -H 'Content-Type: application/json' \
+#     -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"Read","arguments":{"path":"/tmp/test"}},"id":1}'
+#
+# Check JSONL:
+#   docker exec parachute-telemetry-demo cat /var/lib/parachute/events.jsonl
+#
+# Check Pro health:
+#   curl http://localhost:8443/healthz
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: demo-postgres
+    environment:
+      POSTGRES_USER: parachute
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: parachute_pro
+    ports:
+      - "15432:5432"
+    volumes:
+      - demo-pgdata:/var/lib/postgresql/data
+      # Auto-run migrations at first boot
+      - ../parachute-pro/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql:ro
+      - ../parachute-pro/migrations/002_telemetry_v0.sql:/docker-entrypoint-initdb.d/002_telemetry_v0.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parachute -d parachute_pro"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  parachute-pro:
+    build:
+      context: ..              # parachute-repos/ level (both repos available)
+      dockerfile: parachute/demo/Dockerfile.pro-demo
+    container_name: demo-parachute-pro
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./demo/parachute-pro.telemetry-demo.yaml:/etc/parachute-pro/config.yaml:ro
+    environment:
+      PARACHUTE_PRO_DB_URL: "postgres://parachute:devpassword@postgres:5432/parachute_pro?sslmode=disable"
+      PARACHUTE_PRO_ALLOW_UNSIGNED_INGEST: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8443/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  mock-mcp:
+    build: ./demo/mock-mcp-server
+    container_name: demo-mock-mcp
+
+  parachute:
+    build: .
+    container_name: parachute-telemetry-demo
+    ports:
+      - "8080:8080"
+      - "8888:8888"
+    volumes:
+      - ./demo/parachute.telemetry-demo.yaml:/etc/parachute/config.yaml:ro
+      - demo-sidecar-data:/var/lib/parachute
+    environment:
+      PARACHUTE_PASSWORD: demo
+      PARACHUTE_PRO_API_KEY: "demo-api-key"
+    depends_on:
+      parachute-pro:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  demo-pgdata:
+  demo-sidecar-data:

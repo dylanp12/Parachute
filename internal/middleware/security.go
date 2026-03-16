@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
-	"github.com/parachute-security/parachute/internal/audit"
+	"github.com/dylanp12/parachute/internal/audit"
 )
 
 // CSRFConfig holds configuration for CSRF protection

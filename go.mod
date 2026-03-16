@@ -1,4 +1,4 @@
-module github.com/parachute-security/parachute
+module github.com/dylanp12/parachute
 
 go 1.25.0
 

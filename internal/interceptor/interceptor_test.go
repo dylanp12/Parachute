@@ -3,7 +3,7 @@ package interceptor
 import (
 	"testing"
 
-	"github.com/parachute-security/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/config"
 )
 
 func TestInterceptorBlock(t *testing.T) {

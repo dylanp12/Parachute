@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/config"
 )
 
 // Client manages connection to cloud relay server

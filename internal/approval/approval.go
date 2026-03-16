@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/parachute-security/parachute/internal/storage"
+	"github.com/dylanp12/parachute/internal/storage"
 )
 
 // PendingCommand represents a command awaiting approval

@@ -10,7 +10,7 @@
 
 services:
   parachute:
-    image: parachutesecurity/parachute:latest
+    image: dylanp12/parachute:latest
     container_name: parachute
     ports:
       - "8080:8080"

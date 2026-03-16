@@ -41,6 +41,13 @@ type Metrics struct {
 	MCPToolCallsAllowed  atomic.Int64
 	MCPResourceReads     atomic.Int64
 
+	// Broker
+	BrokerRequestsTotal      atomic.Int64
+	BrokerCredentialInjected atomic.Int64
+	BrokerDenied             atomic.Int64
+	BrokerUnavailable        atomic.Int64
+	BrokerEgressBlocked      atomic.Int64
+
 	// Latency tracking (in microseconds)
 	latencyMu    sync.Mutex
 	latencySum   int64
@@ -155,6 +162,27 @@ func Handler() fiber.Handler {
 		sb.WriteString("\n# HELP parachute_mcp_resource_reads Total MCP resource reads\n")
 		sb.WriteString("# TYPE parachute_mcp_resource_reads counter\n")
 		sb.WriteString(fmt.Sprintf("parachute_mcp_resource_reads %d\n", m.MCPResourceReads.Load()))
+
+		// Broker metrics
+		sb.WriteString("\n# HELP parachute_broker_requests_total Total broker credential requests\n")
+		sb.WriteString("# TYPE parachute_broker_requests_total counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_broker_requests_total %d\n", m.BrokerRequestsTotal.Load()))
+
+		sb.WriteString("\n# HELP parachute_broker_credential_injected Total credentials injected\n")
+		sb.WriteString("# TYPE parachute_broker_credential_injected counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_broker_credential_injected %d\n", m.BrokerCredentialInjected.Load()))
+
+		sb.WriteString("\n# HELP parachute_broker_denied Total broker requests denied\n")
+		sb.WriteString("# TYPE parachute_broker_denied counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_broker_denied %d\n", m.BrokerDenied.Load()))
+
+		sb.WriteString("\n# HELP parachute_broker_unavailable Total broker credential unavailable\n")
+		sb.WriteString("# TYPE parachute_broker_unavailable counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_broker_unavailable %d\n", m.BrokerUnavailable.Load()))
+
+		sb.WriteString("\n# HELP parachute_broker_egress_blocked Total direct access blocked for managed integrations\n")
+		sb.WriteString("# TYPE parachute_broker_egress_blocked counter\n")
+		sb.WriteString(fmt.Sprintf("parachute_broker_egress_blocked %d\n", m.BrokerEgressBlocked.Load()))
 
 		// Latency metrics
 		m.latencyMu.Lock()

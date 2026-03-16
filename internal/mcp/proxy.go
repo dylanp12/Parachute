@@ -3,14 +3,16 @@ package mcp
 import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
-	"github.com/parachute-security/parachute/internal/approval"
-	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/dylanp12/parachute/internal/approval"
+	"github.com/dylanp12/parachute/internal/interceptor"
 )
 
 // ServerConfig defines an upstream MCP server
 type ServerConfig struct {
-	Name string `yaml:"name"`
-	URL  string `yaml:"url"`
+	Name      string `yaml:"name"`
+	URL       string `yaml:"url"`
+	Transport string `yaml:"transport"` // "http" (default) or "stdio"
+	Command   string `yaml:"command"`   // for stdio (not implemented)
 }
 
 // ProxyConfig holds MCP proxy configuration
@@ -25,28 +27,42 @@ type ProxyConfig struct {
 // Proxy is the MCP-aware proxy that sits between MCP clients and servers
 type Proxy struct {
 	handler   *Handler
-	upstreams map[string]string // server name → upstream URL
+	upstreams map[string]ServerConfig
+	sseBroker *SSEBroker
 }
 
 // NewProxy creates a new MCP proxy
-func NewProxy(cfg *ProxyConfig, approvalQ *approval.Queue, notifier *approval.Notifier, cmdInterceptor *interceptor.Interceptor) *Proxy {
+func NewProxy(cfg *ProxyConfig, approvalQ *approval.Queue, notifier *approval.Notifier, cmdInterceptor *interceptor.Interceptor, onEvent func(TelemetryHook)) *Proxy {
 	policy := NewPolicyEngine(cfg.DefaultPolicy, cfg.Servers, cmdInterceptor)
-	handler := NewHandler(policy, approvalQ, notifier)
+	handler := NewHandler(policy, approvalQ, notifier, onEvent)
 
-	upstreams := make(map[string]string)
+	upstreams := make(map[string]ServerConfig)
 	for _, u := range cfg.Upstreams {
-		upstreams[u.Name] = u.URL
-		log.Infof("[MCP] Registered upstream server: %s -> %s", u.Name, u.URL)
+		transport := u.Transport
+		if transport == "" {
+			transport = "http"
+		}
+		upstreams[u.Name] = ServerConfig{
+			Name:      u.Name,
+			URL:       u.URL,
+			Transport: transport,
+			Command:   u.Command,
+		}
+		log.Infof("[MCP] Registered upstream server: %s -> %s (transport=%s)", u.Name, u.URL, transport)
 	}
 
 	return &Proxy{
 		handler:   handler,
 		upstreams: upstreams,
+		sseBroker: NewSSEBroker(100),
 	}
 }
 
 // RegisterRoutes adds MCP proxy routes to a Fiber router
 func (p *Proxy) RegisterRoutes(router fiber.Router) {
+	// SSE stream for server-to-client notifications
+	router.Get("/sse", p.sseBroker.HandleSSE)
+
 	// POST /mcp/:server — Route to specific MCP server
 	router.Post("/:server", p.proxyToServer)
 
@@ -65,14 +81,18 @@ func (p *Proxy) proxyToServer(c fiber.Ctx) error {
 		return err
 	}
 
-	// If HandleJSONRPC returned (via c.Next()), forward to upstream
 	upstream, ok := p.upstreams[serverName]
 	if !ok {
 		return c.Status(404).JSON(NewErrorResponse(nil, ErrCodeServerError,
 			"unknown MCP server: "+serverName, nil))
 	}
 
-	return ForwardToServer(upstream)(c)
+	if upstream.Transport == "stdio" {
+		return c.Status(501).JSON(NewErrorResponse(nil, ErrCodeServerError,
+			"stdio transport not yet implemented; use http transport", nil))
+	}
+
+	return ForwardToServer(upstream.URL)(c)
 }
 
 func (p *Proxy) proxyToDefault(c fiber.Ctx) error {
@@ -83,24 +103,27 @@ func (p *Proxy) proxyToDefault(c fiber.Ctx) error {
 		return err
 	}
 
-	// Forward to the first upstream or the named one
 	upstream, ok := p.upstreams[serverName]
 	if !ok {
-		// Try "default" server
 		upstream, ok = p.upstreams["default"]
 		if !ok && len(p.upstreams) > 0 {
-			// Use first available server
 			for _, u := range p.upstreams {
 				upstream = u
 				break
 			}
+			ok = true
 		}
 	}
 
-	if upstream == "" {
+	if !ok {
 		return c.Status(502).JSON(NewErrorResponse(nil, ErrCodeServerError,
 			"no upstream MCP server configured", nil))
 	}
 
-	return ForwardToServer(upstream)(c)
+	if upstream.Transport == "stdio" {
+		return c.Status(501).JSON(NewErrorResponse(nil, ErrCodeServerError,
+			"stdio transport not yet implemented; use http transport", nil))
+	}
+
+	return ForwardToServer(upstream.URL)(c)
 }

@@ -3,7 +3,7 @@
 replicaCount: 1
 
 image:
-  repository: parachutesecurity/parachute
+  repository: dylanp12/parachute
   tag: latest
   pullPolicy: IfNotPresent
 

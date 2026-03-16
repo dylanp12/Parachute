@@ -3,8 +3,8 @@ package mcp
 import (
 	"testing"
 
-	"github.com/parachute-security/parachute/internal/config"
-	"github.com/parachute-security/parachute/internal/interceptor"
+	"github.com/dylanp12/parachute/internal/config"
+	"github.com/dylanp12/parachute/internal/interceptor"
 )
 
 func newTestInterceptor() *interceptor.Interceptor {

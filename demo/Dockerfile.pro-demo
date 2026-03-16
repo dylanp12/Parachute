@@ -1,0 +1,51 @@
+# Build Parachute Pro for demo with local replace directive
+# Build context must be parachute-repos/ (parent) so both repos are available
+FROM golang:1.25.0-alpine AS builder
+
+WORKDIR /build
+ENV GOTOOLCHAIN=auto
+
+RUN apk add --no-cache git
+
+# Copy only Go source from both repos (skip web/, node_modules, etc.)
+COPY parachute/go.mod parachute/go.sum /build/parachute/
+COPY parachute/pkg/ /build/parachute/pkg/
+COPY parachute/internal/ /build/parachute/internal/
+COPY parachute/cmd/ /build/parachute/cmd/
+
+COPY parachute-pro/go.mod parachute-pro/go.sum /build/parachute-pro/
+COPY parachute-pro/pkg/ /build/parachute-pro/pkg/
+COPY parachute-pro/internal/ /build/parachute-pro/internal/
+COPY parachute-pro/cmd/ /build/parachute-pro/cmd/
+COPY parachute-pro/migrations/ /build/parachute-pro/migrations/
+
+WORKDIR /build/parachute-pro
+RUN go mod download
+
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /parachute-pro ./cmd/parachute-pro
+
+# Runtime stage
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+RUN addgroup -g 1000 parachute && \
+    adduser -u 1000 -G parachute -s /bin/sh -D parachute
+
+WORKDIR /app
+
+COPY --from=builder /parachute-pro /app/parachute-pro
+COPY --from=builder /build/parachute-pro/migrations/ /app/migrations/
+
+RUN mkdir -p /etc/parachute-pro && chown parachute:parachute /etc/parachute-pro
+RUN mkdir -p /app/data/objects && chown parachute:parachute /app/data /app/data/objects
+
+USER parachute
+
+EXPOSE 8443
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:8443/healthz || exit 1
+
+ENTRYPOINT ["/app/parachute-pro"]
+CMD ["--config", "/etc/parachute-pro/config.yaml"]
