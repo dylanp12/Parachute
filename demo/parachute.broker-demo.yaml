@@ -1,0 +1,35 @@
+# Parachute Credential Broker Demo Configuration
+# Demonstrates credentialless agent access to GitHub APIs via the broker gateway.
+
+auth:
+  username: "admin"
+  password_env: "PARACHUTE_PASSWORD"
+
+broker:
+  enabled: true
+  listen: ":8081"
+  mode: "enforce"
+  fail_behavior: "closed"
+  integrations:
+    - name: "github"
+      hosts: ["mock-github:9090"]
+      enabled: true
+      credential_source: "dev_static"
+      static_token_env: "GITHUB_TOKEN"
+
+egress:
+  mode: "enforce"
+  rules:
+    - domains: ["api.github.com"]
+      label: "github-managed"
+      action: "deny"
+    - domains: ["mock-github"]
+      label: "mock-github"
+      action: "allow"
+
+storage:
+  type: "memory"
+
+upstream: "http://localhost:9999"
+listen: ":8080"
+proxy_listen: ":8888"
