@@ -21,6 +21,7 @@ A security sidecar that sits between the internet and your autonomous AI agent, 
 - **Audit Logging**: Structured JSON logs with correlation IDs
 - **Prometheus Metrics**: `/metrics` endpoint for monitoring
 - **Dashboard**: Real-time web UI for command approval
+- **Credential Broker**: Credentialless agent access to managed APIs with audit trails ([docs](docs/credential-broker.md))
 
 ## Quick Start
 
@@ -62,6 +63,19 @@ docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
 ```
 
 See [docs/iptables-hardening.md](docs/iptables-hardening.md) for host-level egress enforcement.
+
+### Option 4: Broker Demo
+
+See credentialless GitHub access in action:
+
+```bash
+docker compose -f docker-compose.broker-demo.yml up --build
+```
+
+Watch the simulator access GitHub APIs through the broker without any credentials.
+Direct access attempts are blocked by managed-host enforcement.
+
+See [docs/credential-broker.md](docs/credential-broker.md) for details.
 
 ## Architecture
 

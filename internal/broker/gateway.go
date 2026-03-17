@@ -168,8 +168,17 @@ func (g *Gateway) Handler() fiber.Handler {
 // forwardRequest builds and sends the upstream HTTP request, copying the full
 // HTTP semantics: method, headers, body, query params, response headers, status.
 func (g *Gateway) forwardRequest(c fiber.Ctx, host, path, queryString string, cred *Credential) error {
-	// Build upstream URL
-	targetURL := "https://" + host + path
+	// Build upstream URL.
+	// Use http:// for hosts with an explicit non-443 port (e.g., local mock servers),
+	// and https:// for everything else (standard API hosts).
+	scheme := "https"
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		port := host[idx+1:]
+		if port != "443" {
+			scheme = "http"
+		}
+	}
+	targetURL := scheme + "://" + host + path
 	if queryString != "" {
 		targetURL += "?" + queryString
 	}
