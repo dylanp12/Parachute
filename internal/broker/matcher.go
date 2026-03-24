@@ -4,25 +4,33 @@ import "strings"
 
 // IntegrationMatcher determines if an outbound request targets a managed integration.
 type IntegrationMatcher struct {
-	// hostMap maps lowercase hostname → integration name for O(1) lookup.
+	// hostMap maps lowercase hostname -> integration name for O(1) lookup.
 	hostMap map[string]string
+
+	// providerMap maps integration name -> provider name for route classification.
+	providerMap map[string]string
 }
 
 // IntegrationDef defines a single managed integration for the matcher.
 type IntegrationDef struct {
-	Name  string
-	Hosts []string // exact hostnames (e.g., "api.github.com")
+	Name     string
+	Hosts    []string // exact hostnames (e.g., "api.github.com")
+	Provider string   // provider name for route classification (e.g., "github")
 }
 
 // NewMatcher creates an IntegrationMatcher from integration definitions.
 func NewMatcher(defs []IntegrationDef) *IntegrationMatcher {
 	hostMap := make(map[string]string)
+	providerMap := make(map[string]string)
 	for _, def := range defs {
 		for _, h := range def.Hosts {
 			hostMap[strings.ToLower(h)] = def.Name
 		}
+		if def.Provider != "" {
+			providerMap[def.Name] = def.Provider
+		}
 	}
-	return &IntegrationMatcher{hostMap: hostMap}
+	return &IntegrationMatcher{hostMap: hostMap, providerMap: providerMap}
 }
 
 // Match checks if a hostname targets a managed integration.
@@ -40,6 +48,7 @@ func (m *IntegrationMatcher) Match(hostname string) *MatchResult {
 	return &MatchResult{
 		Integration: name,
 		Host:        hostname,
+		Provider:    m.providerMap[name],
 	}
 }
 
@@ -65,4 +74,10 @@ func (m *IntegrationMatcher) HostForIntegration(integration string) string {
 		}
 	}
 	return ""
+}
+
+// ProviderForIntegration returns the provider name for a given integration.
+// Returns empty string if not found.
+func (m *IntegrationMatcher) ProviderForIntegration(integration string) string {
+	return m.providerMap[integration]
 }

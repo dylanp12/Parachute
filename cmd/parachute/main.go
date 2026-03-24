@@ -32,6 +32,8 @@ import (
 	"github.com/dylanp12/parachute/internal/storage"
 	"github.com/dylanp12/parachute/internal/telemetry"
 	"github.com/dylanp12/parachute/internal/telemetry/exporters"
+	"github.com/dylanp12/parachute/pkg/integrations"
+	"github.com/dylanp12/parachute/pkg/integrations/github"
 )
 
 var (
@@ -307,6 +309,10 @@ func main() {
 			})
 		}
 	}
+	// Build provider registry for route classification
+	registry := integrations.NewRegistry()
+	registry.Register(github.NewClassifier())
+
 	// Build integration matcher for broker (shared between forward proxy and gateway)
 	var matcher *broker.IntegrationMatcher
 	if cfg.Broker.Enabled {
@@ -315,9 +321,15 @@ func main() {
 			if !ic.Enabled {
 				continue
 			}
+			// Default provider to integration name if not explicitly set
+			provider := ic.Provider
+			if provider == "" {
+				provider = ic.Name
+			}
 			defs = append(defs, broker.IntegrationDef{
-				Name:  ic.Name,
-				Hosts: ic.Hosts,
+				Name:     ic.Name,
+				Hosts:    ic.Hosts,
+				Provider: provider,
 			})
 		}
 		matcher = broker.NewMatcher(defs)
@@ -391,12 +403,13 @@ func main() {
 		}
 
 		gw := broker.NewGateway(broker.GatewayConfig{
-			Matcher: matcher,
-			Broker:  credBroker,
-			Mode:    cfg.Broker.Mode,
-			FailBeh: cfg.Broker.FailBehavior,
-			OnEvent: brokerCallback,
-			AgentID: cfg.Telemetry.AgentID,
+			Matcher:  matcher,
+			Registry: registry,
+			Broker:   credBroker,
+			Mode:     cfg.Broker.Mode,
+			FailBeh:  cfg.Broker.FailBehavior,
+			OnEvent:  brokerCallback,
+			AgentID:  cfg.Telemetry.AgentID,
 		})
 
 		// Separate Fiber app for broker -- no auth middleware (internal-only, network segmentation is the trust boundary)

@@ -9,6 +9,7 @@ import "context"
 type MatchResult struct {
 	Integration string // e.g., "github"
 	Host        string // the matched hostname, e.g., "api.github.com"
+	Provider    string // provider name for route classification (e.g., "github")
 }
 
 // BrokerDecision represents the outcome of a credential brokerage attempt.

@@ -9,6 +9,9 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
+
+	"github.com/dylanp12/parachute/pkg/integrations"
+	"github.com/dylanp12/parachute/pkg/integrations/github"
 )
 
 // mockUpstream creates an HTTP server that echoes request details back.
@@ -32,19 +35,26 @@ func mockUpstream(t *testing.T) *httptest.Server {
 	}))
 }
 
+func testRegistry() *integrations.Registry {
+	reg := integrations.NewRegistry()
+	reg.Register(github.NewClassifier())
+	return reg
+}
+
 func setupGateway(t *testing.T, broker CredentialBroker, mode, failBeh string) (*fiber.App, *Gateway) {
 	t.Helper()
 
 	matcher := NewMatcher([]IntegrationDef{
-		{Name: "github", Hosts: []string{"api.github.com"}},
+		{Name: "github", Hosts: []string{"api.github.com"}, Provider: "github"},
 	})
 
 	gw := NewGateway(GatewayConfig{
-		Matcher: matcher,
-		Broker:  broker,
-		Mode:    mode,
-		FailBeh: failBeh,
-		AgentID: "test-agent",
+		Matcher:  matcher,
+		Registry: testRegistry(),
+		Broker:   broker,
+		Mode:     mode,
+		FailBeh:  failBeh,
+		AgentID:  "test-agent",
 	})
 
 	app := fiber.New()
@@ -113,7 +123,7 @@ func TestGateway_UnavailableFailClosed(t *testing.T) {
 func TestGateway_PathReconstruction(t *testing.T) {
 	// Verify the path is correctly extracted
 	matcher := NewMatcher([]IntegrationDef{
-		{Name: "github", Hosts: []string{"api.github.com"}},
+		{Name: "github", Hosts: []string{"api.github.com"}, Provider: "github"},
 	})
 
 	var capturedReq *BrokerRequest
@@ -121,11 +131,12 @@ func TestGateway_PathReconstruction(t *testing.T) {
 
 	app := fiber.New()
 	gw := NewGateway(GatewayConfig{
-		Matcher: matcher,
-		Broker:  captureBroker,
-		Mode:    "enforce",
-		FailBeh: "closed",
-		AgentID: "test-agent",
+		Matcher:  matcher,
+		Registry: testRegistry(),
+		Broker:   captureBroker,
+		Mode:     "enforce",
+		FailBeh:  "closed",
+		AgentID:  "test-agent",
 	})
 	app.All("/broker/:integration/*", gw.Handler())
 
@@ -154,16 +165,17 @@ func TestGateway_TelemetryCallback(t *testing.T) {
 	}
 
 	matcher := NewMatcher([]IntegrationDef{
-		{Name: "github", Hosts: []string{"api.github.com"}},
+		{Name: "github", Hosts: []string{"api.github.com"}, Provider: "github"},
 	})
 	app := fiber.New()
 	gw := NewGateway(GatewayConfig{
-		Matcher: matcher,
-		Broker:  &denyAllBroker{},
-		Mode:    "enforce",
-		FailBeh: "closed",
-		OnEvent: callback,
-		AgentID: "test-agent",
+		Matcher:  matcher,
+		Registry: testRegistry(),
+		Broker:   &denyAllBroker{},
+		Mode:     "enforce",
+		FailBeh:  "closed",
+		OnEvent:  callback,
+		AgentID:  "test-agent",
 	})
 	app.All("/broker/:integration/*", gw.Handler())
 

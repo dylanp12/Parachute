@@ -47,6 +47,7 @@ type TelemetryConfig struct {
 // BrokerIntegrationConfig defines a single managed integration for credential brokerage.
 type BrokerIntegrationConfig struct {
 	Name             string   `yaml:"name"`              // e.g., "github"
+	Provider         string   `yaml:"provider"`          // provider name for route classification (e.g., "github")
 	Hosts            []string `yaml:"hosts"`             // e.g., ["api.github.com"]
 	Enabled          bool     `yaml:"enabled"`
 	CredentialSource string   `yaml:"credential_source"` // "dev_static", "pro", or empty

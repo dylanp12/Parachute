@@ -11,7 +11,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
 
-	github "github.com/dylanp12/parachute/pkg/integrations/github"
+	"github.com/dylanp12/parachute/pkg/integrations"
 )
 
 // TelemetryCallback is invoked for every broker event.
@@ -23,6 +23,7 @@ type TelemetryCallback func(actionType, target, decision, rulePath, enforcementM
 // query params, body, content-type, all response headers, and status codes.
 type Gateway struct {
 	matcher  *IntegrationMatcher
+	registry *integrations.Registry
 	broker   CredentialBroker
 	mode     string // "off", "record", "enforce"
 	failBeh  string // "closed" or "open"
@@ -37,6 +38,7 @@ type Gateway struct {
 // GatewayConfig holds configuration for the broker gateway.
 type GatewayConfig struct {
 	Matcher  *IntegrationMatcher
+	Registry *integrations.Registry
 	Broker   CredentialBroker
 	Mode     string
 	FailBeh  string
@@ -47,12 +49,13 @@ type GatewayConfig struct {
 // NewGateway creates a broker gateway handler.
 func NewGateway(cfg GatewayConfig) *Gateway {
 	return &Gateway{
-		matcher: cfg.Matcher,
-		broker:  cfg.Broker,
-		mode:    cfg.Mode,
-		failBeh: cfg.FailBeh,
-		onEvent: cfg.OnEvent,
-		agentID: cfg.AgentID,
+		matcher:  cfg.Matcher,
+		registry: cfg.Registry,
+		broker:   cfg.Broker,
+		mode:     cfg.Mode,
+		failBeh:  cfg.FailBeh,
+		onEvent:  cfg.OnEvent,
+		agentID:  cfg.AgentID,
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 			Transport: &http.Transport{
@@ -99,9 +102,10 @@ func (g *Gateway) Handler() fiber.Handler {
 			})
 		}
 
-		// Classify the route
+		// Classify the route using the provider registry
 		method := c.Method()
-		routeClass := github.Classify(method, upstreamPath)
+		provider := g.matcher.ProviderForIntegration(integration)
+		routeClass := g.registry.ClassifyForProvider(provider, method, upstreamPath)
 
 		// Resolve credential
 		brokerReq := &BrokerRequest{
