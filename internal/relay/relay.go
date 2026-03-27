@@ -65,8 +65,8 @@ func (c *Client) IsConnected() bool {
 }
 
 func (c *Client) connect(ctx context.Context) error {
-	// Production implementation requires gorilla/websocket:
-	//   go get github.com/gorilla/websocket
+	// Production implementation requires gws:
+	//   go get github.com/lxzan/gws
 	//
 	// The connection flow:
 	// 1. Dial wss://relay.parachute.dev/ws

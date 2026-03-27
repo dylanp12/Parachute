@@ -9,13 +9,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
-	fasthttpwebsocket "github.com/fasthttp/websocket"
-	fiberwebsocket "github.com/gofiber/contrib/v3/websocket"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/log"
+	"github.com/gofiber/fiber/v3/middleware/adaptor"
+	"github.com/lxzan/gws"
 	"github.com/dylanp12/parachute/internal/approval"
 	"github.com/dylanp12/parachute/internal/config"
 	"github.com/dylanp12/parachute/internal/egress"
@@ -31,6 +30,7 @@ type Proxy struct {
 	notifier    *approval.Notifier
 	egress      *egress.Filter
 	cfg         *config.Config
+	wsUpgrader  *gws.Upgrader
 }
 
 // New creates a new proxy instance
@@ -43,7 +43,7 @@ func New(cfg *config.Config, approvalQ *approval.Queue, notifier *approval.Notif
 		MaxIdleConnsPerHost: 10,
 	}
 
-	return &Proxy{
+	p := &Proxy{
 		upstream: cfg.Upstream,
 		client: &http.Client{
 			Transport: transport,
@@ -55,13 +55,29 @@ func New(cfg *config.Config, approvalQ *approval.Queue, notifier *approval.Notif
 		egress:      egress.New(&cfg.Egress),
 		cfg:         cfg,
 	}
+
+	p.wsUpgrader = gws.NewUpgrader(&wsProxyHandler{proxy: p}, &gws.ServerOption{
+		Authorize: func(r *http.Request, session gws.SessionStorage) bool {
+			path := r.URL.Path
+			if strings.HasPrefix(path, "/proxy") {
+				path = strings.TrimPrefix(path, "/proxy")
+				if path == "" {
+					path = "/"
+				}
+			}
+			session.Store("path", path)
+			return true
+		},
+	})
+
+	return p
 }
 
 // Handler returns the Fiber handler for proxying requests
 func (p *Proxy) Handler() fiber.Handler {
 	return func(c fiber.Ctx) error {
 		// Check for WebSocket upgrade request - delegate to WebSocket handler
-		if fiberwebsocket.IsWebSocketUpgrade(c) {
+		if strings.EqualFold(c.Get("Upgrade"), "websocket") {
 			return p.handleWebSocket(c)
 		}
 
@@ -220,102 +236,97 @@ func (p *Proxy) handleStreaming(c fiber.Ctx, body []byte) error {
 	})
 }
 
-// WebSocketHandler returns a Fiber handler for WebSocket upgrade requests
-// This should be registered with the websocket.New() middleware
+// WebSocketHandler returns a Fiber handler for WebSocket upgrade requests.
 func (p *Proxy) WebSocketHandler() fiber.Handler {
-	return fiberwebsocket.New(func(c *fiberwebsocket.Conn) {
-		defer c.Close()
-
-		// Get the path from locals (set before upgrade)
-		path, _ := c.Locals("proxy_path").(string)
-		if path == "" {
-			path = "/"
-		}
-
-		// Build upstream WebSocket URL
-		upstreamURL := p.upstream + path
-		upstreamURL = strings.Replace(upstreamURL, "http://", "ws://", 1)
-		upstreamURL = strings.Replace(upstreamURL, "https://", "wss://", 1)
-
-		log.Infof("[WEBSOCKET] Connecting to upstream: %s", upstreamURL)
-
-		// Connect to upstream WebSocket using gorilla websocket dialer
-		dialer := fasthttpwebsocket.Dialer{
-			HandshakeTimeout: 30 * time.Second,
-		}
-
-		upstreamConn, _, err := dialer.Dial(upstreamURL, nil)
+	return adaptor.HTTPHandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		socket, err := p.wsUpgrader.Upgrade(w, r)
 		if err != nil {
-			log.Errorf("[WEBSOCKET] Failed to connect to upstream: %v", err)
+			log.Errorf("[WEBSOCKET] Client upgrade failed: %v", err)
 			return
 		}
-		defer upstreamConn.Close()
-
-		log.Infof("[WEBSOCKET] Connected to upstream: %s", upstreamURL)
-
-		// Bidirectional proxy using goroutines
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		// Client -> Upstream
-		go func() {
-			defer wg.Done()
-			for {
-				messageType, message, err := c.ReadMessage()
-				if err != nil {
-					if !fasthttpwebsocket.IsCloseError(err, fasthttpwebsocket.CloseGoingAway, fasthttpwebsocket.CloseNormalClosure) {
-						log.Errorf("[WEBSOCKET] Client read error: %v", err)
-					}
-					upstreamConn.Close()
-					return
-				}
-				if err := upstreamConn.WriteMessage(messageType, message); err != nil {
-					log.Errorf("[WEBSOCKET] Upstream write error: %v", err)
-					return
-				}
-			}
-		}()
-
-		// Upstream -> Client
-		go func() {
-			defer wg.Done()
-			for {
-				messageType, message, err := upstreamConn.ReadMessage()
-				if err != nil {
-					if !fasthttpwebsocket.IsCloseError(err, fasthttpwebsocket.CloseGoingAway, fasthttpwebsocket.CloseNormalClosure) {
-						log.Errorf("[WEBSOCKET] Upstream read error: %v", err)
-					}
-					c.Close()
-					return
-				}
-				if err := c.WriteMessage(messageType, message); err != nil {
-					log.Errorf("[WEBSOCKET] Client write error: %v", err)
-					return
-				}
-			}
-		}()
-
-		wg.Wait()
-		log.Infof("[WEBSOCKET] Connection closed for %s", path)
+		socket.ReadLoop()
 	})
 }
 
 // handleWebSocket handles WebSocket upgrade requests
 func (p *Proxy) handleWebSocket(c fiber.Ctx) error {
-	// Store the path for the WebSocket handler
-	path := c.OriginalURL()
-	if strings.HasPrefix(path, "/proxy") {
-		path = strings.TrimPrefix(path, "/proxy")
-		if path == "" {
-			path = "/"
-		}
-	}
-	c.Locals("proxy_path", path)
-
-	log.Infof("[WEBSOCKET] Upgrade request for %s", path)
-
-	// Use the WebSocket handler
+	log.Infof("[WEBSOCKET] Upgrade request for %s", c.OriginalURL())
 	return p.WebSocketHandler()(c)
+}
+
+// wsProxyHandler handles client-side WebSocket events for the proxy.
+// Shared across all connections; per-connection state in Session.
+type wsProxyHandler struct {
+	gws.BuiltinEventHandler
+	proxy *Proxy
+}
+
+func (h *wsProxyHandler) OnOpen(socket *gws.Conn) {
+	raw, ok := socket.Session().Load("path")
+	if !ok {
+		socket.WriteClose(1011, []byte("missing path"))
+		return
+	}
+	path := raw.(string)
+
+	upstreamURL := h.proxy.upstream + path
+	upstreamURL = strings.Replace(upstreamURL, "http://", "ws://", 1)
+	upstreamURL = strings.Replace(upstreamURL, "https://", "wss://", 1)
+
+	log.Infof("[WEBSOCKET] Connecting to upstream: %s", upstreamURL)
+
+	upstreamConn, _, err := gws.NewClient(&wsUpstreamHandler{client: socket}, &gws.ClientOption{
+		Addr:             upstreamURL,
+		HandshakeTimeout: 30 * time.Second,
+	})
+	if err != nil {
+		log.Errorf("[WEBSOCKET] Failed to connect to upstream: %v", err)
+		socket.WriteClose(1011, []byte("upstream connection failed"))
+		return
+	}
+
+	log.Infof("[WEBSOCKET] Connected to upstream: %s", upstreamURL)
+
+	socket.Session().Store("upstream", upstreamConn)
+	go upstreamConn.ReadLoop()
+}
+
+func (h *wsProxyHandler) OnMessage(socket *gws.Conn, message *gws.Message) {
+	defer message.Close()
+	raw, ok := socket.Session().Load("upstream")
+	if !ok {
+		return
+	}
+	upstream := raw.(*gws.Conn)
+	if err := upstream.WriteMessage(message.Opcode, message.Bytes()); err != nil {
+		log.Errorf("[WEBSOCKET] Upstream write error: %v", err)
+	}
+}
+
+func (h *wsProxyHandler) OnClose(socket *gws.Conn, err error) {
+	raw, ok := socket.Session().Load("upstream")
+	if !ok {
+		return
+	}
+	upstream := raw.(*gws.Conn)
+	upstream.WriteClose(1000, nil)
+}
+
+// wsUpstreamHandler handles upstream WebSocket events, forwarding to the client.
+type wsUpstreamHandler struct {
+	gws.BuiltinEventHandler
+	client *gws.Conn
+}
+
+func (h *wsUpstreamHandler) OnMessage(socket *gws.Conn, message *gws.Message) {
+	defer message.Close()
+	if err := h.client.WriteMessage(message.Opcode, message.Bytes()); err != nil {
+		log.Errorf("[WEBSOCKET] Client write error: %v", err)
+	}
+}
+
+func (h *wsUpstreamHandler) OnClose(socket *gws.Conn, err error) {
+	h.client.WriteClose(1000, nil)
 }
 
 // handleOpenClawToolInvoke handles OpenClaw's POST /tools/invoke endpoint
