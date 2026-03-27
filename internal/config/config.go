@@ -24,6 +24,7 @@ type TelemetryConfig struct {
 	Enabled        bool   `yaml:"enabled"`
 	AgentID        string `yaml:"agent_id"`
 	TenantID       string `yaml:"tenant_id"`
+	CorrelationID  string `yaml:"correlation_id"` // Set by runner to link events to runs/processes
 	ChainStatePath string `yaml:"chain_state_path"`
 	Signing        struct {
 		KeyPath string `yaml:"key_path"` // Path to Ed25519 private key (PEM or raw)

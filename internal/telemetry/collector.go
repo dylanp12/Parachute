@@ -22,6 +22,7 @@ type Exporter interface {
 type CollectorConfig struct {
 	AgentID        string
 	TenantID       string
+	CorrelationID  string // Links events to deployment runs/processes
 	SidecarVersion string
 	QueueSize      int // default 10000
 	SigningKey     ed25519.PrivateKey
@@ -123,9 +124,10 @@ func (c *Collector) RecordWithParent(event TelemetryEvent, parentSpanID string) 
 			SidecarVersion: c.cfg.SidecarVersion,
 		},
 		Telemetry: sdr.TelemetryContext{
-			SessionID:    c.sessionID,
-			SpanID:       spanID,
-			ParentSpanID: parentSpanID,
+			SessionID:     c.sessionID,
+			SpanID:        spanID,
+			ParentSpanID:  parentSpanID,
+			CorrelationID: c.cfg.CorrelationID,
 		},
 		Enforcement: sdr.EnforcementInfo{
 			Mode: event.EnforcementMode,

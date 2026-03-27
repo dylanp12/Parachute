@@ -91,9 +91,10 @@ type RuntimeInfo struct {
 
 // TelemetryContext provides causality and session tracking.
 type TelemetryContext struct {
-	SessionID    string `json:"session_id"`
-	SpanID       string `json:"span_id,omitempty"`
-	ParentSpanID string `json:"parent_span_id,omitempty"`
+	SessionID     string `json:"session_id"`
+	SpanID        string `json:"span_id,omitempty"`
+	ParentSpanID  string `json:"parent_span_id,omitempty"`
+	CorrelationID string `json:"correlation_id,omitempty"` // Links events to deployment runs/processes
 }
 
 // EnforcementInfo describes whether the decision was enforced or record-only.
@@ -121,17 +122,18 @@ type RejectionReason struct {
 
 // HeartbeatPayload is the heartbeat message sent by sidecars to the control plane.
 type HeartbeatPayload struct {
-	AgentID         string         `json:"agent_id"`
-	TenantID        string         `json:"tenant_id"`
-	Env             string         `json:"env,omitempty"`
-	Service         string         `json:"service,omitempty"`
-	Region          string         `json:"region,omitempty"`
-	SidecarVersion  string         `json:"sidecar_version"`
-	PolicyBundleHash string        `json:"policy_bundle_hash"`
-	ConfigHash      string         `json:"config_hash"`
-	PendingCount    int            `json:"pending_count"`
-	CommandsBlocked int64          `json:"commands_blocked"`
-	CommandsAllowed int64          `json:"commands_allowed"`
-	UptimeSeconds   float64        `json:"uptime_seconds"`
-	Metadata        map[string]any `json:"metadata,omitempty"`
+	AgentID          string         `json:"agent_id"`
+	TenantID         string         `json:"tenant_id"`
+	CorrelationID    string         `json:"correlation_id,omitempty"` // Links heartbeats to deployment runs/processes
+	Env              string         `json:"env,omitempty"`
+	Service          string         `json:"service,omitempty"`
+	Region           string         `json:"region,omitempty"`
+	SidecarVersion   string         `json:"sidecar_version"`
+	PolicyBundleHash string         `json:"policy_bundle_hash"`
+	ConfigHash       string         `json:"config_hash"`
+	PendingCount     int            `json:"pending_count"`
+	CommandsBlocked  int64          `json:"commands_blocked"`
+	CommandsAllowed  int64          `json:"commands_allowed"`
+	UptimeSeconds    float64        `json:"uptime_seconds"`
+	Metadata         map[string]any `json:"metadata,omitempty"`
 }

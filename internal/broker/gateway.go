@@ -22,13 +22,14 @@ type TelemetryCallback func(actionType, target, decision, rulePath, enforcementM
 // requests to upstream APIs. Must be fully HTTP-semantic: preserves method,
 // query params, body, content-type, all response headers, and status codes.
 type Gateway struct {
-	matcher  *IntegrationMatcher
-	registry *integrations.Registry
-	broker   CredentialBroker
-	mode     string // "off", "record", "enforce"
-	failBeh  string // "closed" or "open"
-	onEvent  TelemetryCallback
-	agentID  string
+	matcher       *IntegrationMatcher
+	registry      *integrations.Registry
+	broker        CredentialBroker
+	mode          string // "off", "record", "enforce"
+	failBeh       string // "closed" or "open"
+	onEvent       TelemetryCallback
+	agentID       string
+	correlationID string
 
 	// Dedicated HTTP client for upstream calls.
 	// Uses direct dialing -- does NOT route through the forward proxy.
@@ -37,25 +38,27 @@ type Gateway struct {
 
 // GatewayConfig holds configuration for the broker gateway.
 type GatewayConfig struct {
-	Matcher  *IntegrationMatcher
-	Registry *integrations.Registry
-	Broker   CredentialBroker
-	Mode     string
-	FailBeh  string
-	OnEvent  TelemetryCallback
-	AgentID  string
+	Matcher       *IntegrationMatcher
+	Registry      *integrations.Registry
+	Broker        CredentialBroker
+	Mode          string
+	FailBeh       string
+	OnEvent       TelemetryCallback
+	AgentID       string
+	CorrelationID string
 }
 
 // NewGateway creates a broker gateway handler.
 func NewGateway(cfg GatewayConfig) *Gateway {
 	return &Gateway{
-		matcher:  cfg.Matcher,
-		registry: cfg.Registry,
-		broker:   cfg.Broker,
-		mode:     cfg.Mode,
-		failBeh:  cfg.FailBeh,
-		onEvent:  cfg.OnEvent,
-		agentID:  cfg.AgentID,
+		matcher:       cfg.Matcher,
+		registry:      cfg.Registry,
+		broker:        cfg.Broker,
+		mode:          cfg.Mode,
+		failBeh:       cfg.FailBeh,
+		onEvent:       cfg.OnEvent,
+		agentID:       cfg.AgentID,
+		correlationID: cfg.CorrelationID,
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 			Transport: &http.Transport{
@@ -267,6 +270,9 @@ func (g *Gateway) emitEvent(target, integration, routeClass, decision, rulePath,
 		"integration":       integration,
 		"route_class":       routeClass,
 		"credential_source": credSource,
+	}
+	if g.correlationID != "" {
+		params["correlation_id"] = g.correlationID
 	}
 	g.onEvent("broker_request", target, decision, rulePath, g.mode, params)
 }

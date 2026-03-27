@@ -160,6 +160,7 @@ func main() {
 		collector = telemetry.NewCollector(telemetry.CollectorConfig{
 			AgentID:        cfg.Telemetry.AgentID,
 			TenantID:       cfg.Telemetry.TenantID,
+			CorrelationID:  cfg.Telemetry.CorrelationID,
 			SidecarVersion: version,
 			SigningKey:     signingKey,
 			KeyID:          keyID,
@@ -190,12 +191,13 @@ func main() {
 		if cfg.Telemetry.HTTP.URL != "" {
 			heartbeatURL := strings.TrimSuffix(cfg.Telemetry.HTTP.URL, "/sdr-batch") + "/heartbeat"
 			hb := exporters.NewHeartbeatEmitter(exporters.HeartbeatConfig{
-				ProURL:   heartbeatURL,
-				APIKey:   os.Getenv(cfg.Telemetry.HTTP.APIKeyEnv),
-				AgentID:  cfg.Telemetry.AgentID,
-				TenantID: cfg.Telemetry.TenantID,
-				Interval: parseDuration(cfg.Telemetry.Heartbeat.Interval, 30*time.Second),
-				Version:  version,
+				ProURL:        heartbeatURL,
+				APIKey:        os.Getenv(cfg.Telemetry.HTTP.APIKeyEnv),
+				AgentID:       cfg.Telemetry.AgentID,
+				TenantID:      cfg.Telemetry.TenantID,
+				CorrelationID: cfg.Telemetry.CorrelationID,
+				Interval:      parseDuration(cfg.Telemetry.Heartbeat.Interval, 30*time.Second),
+				Version:       version,
 			})
 			hb.Start(ctx)
 		}
@@ -403,13 +405,14 @@ func main() {
 		}
 
 		gw := broker.NewGateway(broker.GatewayConfig{
-			Matcher:  matcher,
-			Registry: registry,
-			Broker:   credBroker,
-			Mode:     cfg.Broker.Mode,
-			FailBeh:  cfg.Broker.FailBehavior,
-			OnEvent:  brokerCallback,
-			AgentID:  cfg.Telemetry.AgentID,
+			Matcher:       matcher,
+			Registry:      registry,
+			Broker:        credBroker,
+			Mode:          cfg.Broker.Mode,
+			FailBeh:       cfg.Broker.FailBehavior,
+			OnEvent:       brokerCallback,
+			AgentID:       cfg.Telemetry.AgentID,
+			CorrelationID: cfg.Telemetry.CorrelationID,
 		})
 
 		// Separate Fiber app for broker -- no auth middleware (internal-only, network segmentation is the trust boundary)

@@ -12,12 +12,13 @@ import (
 
 // HeartbeatConfig configures the heartbeat emitter.
 type HeartbeatConfig struct {
-	ProURL   string
-	APIKey   string
-	AgentID  string
-	TenantID string
-	Interval time.Duration
-	Version  string
+	ProURL        string
+	APIKey        string
+	AgentID       string
+	TenantID      string
+	CorrelationID string
+	Interval      time.Duration
+	Version       string
 }
 
 // HeartbeatEmitter sends periodic heartbeats to Pro's fleet endpoint.
@@ -68,6 +69,7 @@ func (h *HeartbeatEmitter) send() {
 	payload := sdr.HeartbeatPayload{
 		AgentID:        h.cfg.AgentID,
 		TenantID:       h.cfg.TenantID,
+		CorrelationID:  h.cfg.CorrelationID,
 		SidecarVersion: h.cfg.Version,
 	}
 
