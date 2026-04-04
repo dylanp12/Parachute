@@ -1,0 +1,34 @@
+# OpenClaw Agent Runtime
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f agents/openclaw/compose.yaml up -d
+#
+# Required env vars:
+#   ANTHROPIC_API_KEY - Your Anthropic API key
+#   PARACHUTE_PASSWORD - Dashboard password
+
+services:
+  openclaw:
+    image: alpine/openclaw:latest
+    container_name: openclaw
+    networks:
+      - agent-net
+      - public-net
+    ports:
+      - "18789:18789"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-215e65a893e0bf9463e20dc60ef2f87bc3f403919d3bca86}
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ../../workspace:/workspace
+      - ./openclaw.example.json:/home/node/.openclaw/openclaw.json:ro
+    depends_on:
+      parachute:
+        condition: service_healthy
+    restart: unless-stopped

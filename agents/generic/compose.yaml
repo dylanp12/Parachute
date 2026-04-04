@@ -1,0 +1,28 @@
+# Generic Agent Runtime (Bring Your Own Agent)
+#
+# Template for any agent that needs HTTP traffic routed through Parachute.
+# Customize the image, command, and environment for your agent.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f agents/generic/compose.yaml up -d
+
+services:
+  agent:
+    image: ${AGENT_IMAGE:-python:3.13-slim}
+    container_name: agent
+    networks:
+      - agent-net
+    environment:
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ../../workspace:/workspace
+    working_dir: /workspace
+    depends_on:
+      parachute:
+        condition: service_healthy
+    restart: unless-stopped

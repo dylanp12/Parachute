@@ -1,0 +1,35 @@
+# Claude Code Agent Runtime
+#
+# Anthropic's AI coding agent, routed through Parachute for egress control.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f agents/claude-code/compose.yaml up -d
+#
+# Required env vars:
+#   ANTHROPIC_API_KEY - Your Anthropic API key
+#   PARACHUTE_PASSWORD - Dashboard password
+
+services:
+  claude-code:
+    image: ${CLAUDE_CODE_IMAGE:-node:22-slim}
+    container_name: claude-code
+    command: ["sh", "-c", "npm install -g @anthropic-ai/claude-code && claude"]
+    stdin_open: true
+    tty: true
+    networks:
+      - agent-net
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ../../workspace:/workspace
+    working_dir: /workspace
+    depends_on:
+      parachute:
+        condition: service_healthy
+    restart: unless-stopped

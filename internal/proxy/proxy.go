@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -560,7 +561,7 @@ func VersionHandler(version string) fiber.Handler {
 		return c.JSON(fiber.Map{
 			"version":   version,
 			"service":   "parachute",
-			"goVersion": "go1.21+",
+			"goVersion": runtime.Version(),
 		})
 	}
 }

@@ -1,0 +1,14 @@
+{
+  "auth": {
+    "mode": "token"
+  },
+  "models": {
+    "default": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-20250514"
+    }
+  },
+  "tools": {
+    "profile": "coding"
+  }
+}
