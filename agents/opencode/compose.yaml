@@ -8,6 +8,9 @@
 # Required env vars:
 #   ANTHROPIC_API_KEY or OPENAI_API_KEY
 #   PARACHUTE_PASSWORD - Dashboard password
+#
+# NOTE: Installs opencode on first start. For faster startup, use a
+#       pre-built image via OPENCODE_IMAGE.
 
 services:
   opencode:
@@ -28,9 +31,13 @@ services:
       - NO_PROXY=localhost,127.0.0.1,parachute
       - no_proxy=localhost,127.0.0.1,parachute
     volumes:
-      - ../../workspace:/workspace
+      - ./workspace:/workspace
     working_dir: /workspace
     depends_on:
       parachute:
         condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

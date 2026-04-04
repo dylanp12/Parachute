@@ -48,6 +48,8 @@ docker compose -f docker-compose.yml -f agents/claude-code/compose.yaml up -d
 
 Each agent directory contains a `compose.yaml` fragment, starter configs, and a README with setup details.
 
+> **Anthropic API ban (April 2026):** Anthropic has banned third-party harnesses from using Claude API keys. OpenClaw and NemoClaw must use non-Anthropic providers (OpenAI, Google, NVIDIA NIM). Claude Code is Anthropic's first-party tool and is unaffected. See each agent's README for details.
+
 ## Features
 
 - **Egress Control**: Domain whitelist with HTTPS CONNECT proxy support

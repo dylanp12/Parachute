@@ -10,9 +10,14 @@ services:
   agent:
     image: ${AGENT_IMAGE:-python:3.13-slim}
     container_name: agent
+    stdin_open: true
+    tty: true
     networks:
       - agent-net
     environment:
+      # Add your provider API keys:
+      # - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - HTTP_PROXY=http://parachute:8888
       - HTTPS_PROXY=http://parachute:8888
       - http_proxy=http://parachute:8888
@@ -20,7 +25,7 @@ services:
       - NO_PROXY=localhost,127.0.0.1,parachute
       - no_proxy=localhost,127.0.0.1,parachute
     volumes:
-      - ../../workspace:/workspace
+      - ./workspace:/workspace
     working_dir: /workspace
     depends_on:
       parachute:

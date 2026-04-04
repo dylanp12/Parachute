@@ -19,7 +19,8 @@ services:
     volumes:
       - ./parachute.yaml:/etc/parachute/config.yaml:ro
     environment:
-      - PARACHUTE_PASSWORD=${PARACHUTE_PASSWORD:-changeme}
+      # IMPORTANT: Set PARACHUTE_PASSWORD in your environment. Do not deploy with defaults.
+      - PARACHUTE_PASSWORD=${PARACHUTE_PASSWORD:?Set PARACHUTE_PASSWORD before starting}
     networks:
       - public-net
       - agent-net

@@ -9,10 +9,15 @@ usage() {
     echo "Usage: ./run.sh <agent-runtime> [docker compose args...]"
     echo ""
     echo "Available agents:"
-    for dir in "$AGENTS_DIR"/*/; do
-        name=$(basename "$dir")
-        echo "  $name"
-    done
+    if [ -d "$AGENTS_DIR" ]; then
+        for dir in "$AGENTS_DIR"/*/; do
+            [ -d "$dir" ] || continue
+            name=$(basename "$dir")
+            echo "  $name"
+        done
+    else
+        echo "  (none found — agents/ directory is missing)"
+    fi
     echo ""
     echo "Examples:"
     echo "  ./run.sh claude-code              # Start Claude Code + Parachute"

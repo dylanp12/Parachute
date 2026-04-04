@@ -4,12 +4,12 @@
   },
   "models": {
     "default": {
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514"
-    },
-    "nvidia": {
       "provider": "nvidia",
       "model": "nvidia/nemotron-3-super-120b-a12b"
+    },
+    "openai": {
+      "provider": "openai",
+      "model": "gpt-4o"
     }
   },
   "tools": {

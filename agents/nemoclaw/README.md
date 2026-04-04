@@ -8,14 +8,21 @@ OpenShell sandbox (Landlock + seccomp + network namespaces).
 - **Linux only** (kernel 5.13+ for Landlock LSM support)
 - Docker with access to GHCR
 
+## Anthropic API Ban
+
+Anthropic has banned third-party harnesses (including NemoClaw) from using Claude
+API keys. Use NVIDIA NIM, OpenAI, or another supported provider instead.
+
 ## Quick Start
 
 ```bash
-export ANTHROPIC_API_KEY="your-key"
+export NVIDIA_API_KEY="your-key"  # or OPENAI_API_KEY
 export PARACHUTE_PASSWORD="your-password"
 docker compose -f docker-compose.yml -f agents/nemoclaw/compose.yaml up -d
 # or: ./run.sh nemoclaw
 ```
+
+> Cannot run simultaneously with OpenClaw (port 18789 conflict).
 
 ## Why both NemoClaw and Parachute?
 

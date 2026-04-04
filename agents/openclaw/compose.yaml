@@ -1,11 +1,17 @@
 # OpenClaw Agent Runtime
 #
+# NOTE: Anthropic has banned third-party harnesses from using Claude API keys.
+#       OpenClaw must use a non-Anthropic provider (OpenAI, Google, NVIDIA NIM, etc.).
+#       See: https://www.theverge.com/ai-artificial-intelligence/907074/anthropic-openclaw-claude-subscription-ban
+#
 # Usage:
 #   docker compose -f docker-compose.yml -f agents/openclaw/compose.yaml up -d
 #
 # Required env vars:
-#   ANTHROPIC_API_KEY - Your Anthropic API key
+#   OPENAI_API_KEY (or another supported provider key)
 #   PARACHUTE_PASSWORD - Dashboard password
+#
+# NOTE: Cannot run simultaneously with nemoclaw (port 18789 conflict).
 
 services:
   openclaw:
@@ -13,12 +19,12 @@ services:
     container_name: openclaw
     networks:
       - agent-net
-      - public-net
     ports:
       - "18789:18789"
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-215e65a893e0bf9463e20dc60ef2f87bc3f403919d3bca86}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - HTTP_PROXY=http://parachute:8888
       - HTTPS_PROXY=http://parachute:8888
       - http_proxy=http://parachute:8888
@@ -26,9 +32,14 @@ services:
       - NO_PROXY=localhost,127.0.0.1,parachute
       - no_proxy=localhost,127.0.0.1,parachute
     volumes:
-      - ../../workspace:/workspace
-      - ./openclaw.example.json:/home/node/.openclaw/openclaw.json:ro
+      - ./workspace:/workspace
+      - ./agents/openclaw/openclaw.example.json:/home/node/.openclaw/openclaw.json:ro
+    working_dir: /workspace
     depends_on:
       parachute:
         condition: service_healthy
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
