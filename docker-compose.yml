@@ -1,32 +1,29 @@
-# Parachute Security Sidecar - Docker Compose Configuration
+# Parachute Security Sidecar - Base Configuration
 #
-# NETWORK ARCHITECTURE:
-#   Internet ─────► Parachute (8080/8888) ◄────► Agent (isolated)
-#                        │                           │
-#                   public-net                  agent-net
-#                   (has internet)            (NO internet)
+# This defines only the Parachute service. Compose with an agent runtime:
+#   docker compose -f docker-compose.yml -f agents/claude-code/compose.yaml up -d
 #
-# SECURITY GUARANTEES:
-# 1. Agent container has NO direct internet access (internal network only)
-# 2. All agent egress traffic MUST go through Parachute forward proxy
-# 3. Only Parachute has exposed ports; agent ports are NOT accessible
-# 4. Egress is filtered by domain whitelist and PII patterns
+# Or use the convenience wrapper:
+#   ./run.sh claude-code
+#
+# Available agents: openclaw, nemoclaw, claude-code, opencode, t3-code, generic
+# See agents/ directory for details.
 
 services:
   parachute:
     build: .
     container_name: parachute
-    # ONLY Parachute exposes ports to the outside world
     ports:
-      - "8080:8080"   # Main API/Dashboard
-      - "18888:8888"  # Forward proxy for agent egress (host:18888 → container:8888)
+      - "8080:8080"
+      - "8888:8888"
     volumes:
       - ./parachute.yaml:/etc/parachute/config.yaml:ro
     environment:
-      - PARACHUTE_PASSWORD=${PARACHUTE_PASSWORD:-changeme}
+      # IMPORTANT: Set PARACHUTE_PASSWORD in your environment. Do not deploy with defaults.
+      - PARACHUTE_PASSWORD=${PARACHUTE_PASSWORD:?Set PARACHUTE_PASSWORD before starting}
     networks:
-      - public-net    # Internet access for Parachute ONLY
-      - agent-net     # Private network with agent
+      - public-net
+      - agent-net
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
@@ -35,45 +32,9 @@ services:
       retries: 3
       start_period: 5s
 
-  # OpenClaw agent - COMPLETELY ISOLATED, no direct internet access
-  openclaw:
-    image: alpine/openclaw:latest
-    container_name: openclaw
-    networks:
-      - agent-net     # Private network for communication with parachute
-      - public-net    # Required for host port mapping (egress still forced through proxy)
-    # Gateway port exposed so the openclaw client can connect from the host.
-    # Egress security is enforced by HTTP_PROXY env vars → parachute forward proxy.
-    ports:
-      - "18789:18789"  # OpenClaw gateway WebSocket
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-215e65a893e0bf9463e20dc60ef2f87bc3f403919d3bca86}
-      # MANDATORY: Force ALL HTTP/HTTPS traffic through Parachute proxy
-      # Without these, the agent cannot reach the internet at all
-      - HTTP_PROXY=http://parachute:8888
-      - HTTPS_PROXY=http://parachute:8888
-      - http_proxy=http://parachute:8888
-      - https_proxy=http://parachute:8888
-      # Don't proxy local/internal traffic
-      - NO_PROXY=localhost,127.0.0.1,parachute
-      - no_proxy=localhost,127.0.0.1,parachute
-    volumes:
-      - ./workspace:/workspace
-      - ./openclaw.json:/home/node/.openclaw/openclaw.json
-    depends_on:
-      parachute:
-        condition: service_healthy
-    restart: unless-stopped
-
 networks:
-  # Public network - has internet access
-  # ONLY Parachute should be connected to this network
   public-net:
     driver: bridge
-
-  # Private/internal network - NO internet access
-  # This is the security boundary that isolates the agent
   agent-net:
     driver: bridge
-    internal: true  # CRITICAL: Prevents direct internet access for all containers on this network
+    internal: true

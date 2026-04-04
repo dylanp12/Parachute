@@ -1,0 +1,43 @@
+# T3 Code Agent Runtime
+#
+# T3 coding agent, routed through Parachute for egress control.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f agents/t3-code/compose.yaml up -d
+#
+# Required env vars:
+#   ANTHROPIC_API_KEY or OPENAI_API_KEY
+#   PARACHUTE_PASSWORD - Dashboard password
+#
+# NOTE: Installs t3-code on first start. For faster startup, use a
+#       pre-built image via T3_CODE_IMAGE.
+
+services:
+  t3-code:
+    image: ${T3_CODE_IMAGE:-node:22-slim}
+    container_name: t3-code
+    command: ["sh", "-c", "npm install -g t3-code && t3-code"]
+    stdin_open: true
+    tty: true
+    networks:
+      - agent-net
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ./workspace:/workspace
+    working_dir: /workspace
+    depends_on:
+      parachute:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

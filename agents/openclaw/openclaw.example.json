@@ -1,0 +1,14 @@
+{
+  "auth": {
+    "mode": "token"
+  },
+  "models": {
+    "default": {
+      "provider": "openai",
+      "model": "gpt-4o"
+    }
+  },
+  "tools": {
+    "profile": "coding"
+  }
+}

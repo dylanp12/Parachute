@@ -1,5 +1,5 @@
 # HARDENED CONFIGURATION
-# Use with: docker compose -f docker-compose.yml -f docker-compose.hardened.yml up -d
+# Use with: docker compose -f docker-compose.yml -f agents/<runtime>/compose.yaml -f docker-compose.hardened.yml up -d
 #
 # This profile adds additional security measures beyond network isolation:
 # - Non-root execution
@@ -9,6 +9,9 @@
 # - No privilege escalation
 #
 # For full egress control on the host, see docs/iptables-hardening.md
+#
+# Note: For agent-specific hardening, add security_opt/cap_drop/resource limits
+# in the agent's compose.yaml (see agents/nemoclaw/ for an example).
 
 services:
   parachute:
@@ -20,8 +23,6 @@ services:
     # Drop ALL capabilities, only add what's needed
     cap_drop:
       - ALL
-    cap_add:
-      - NET_BIND_SERVICE  # Allow binding to ports < 1024 if needed
     # Read-only root filesystem prevents tampering
     read_only: true
     tmpfs:
@@ -36,29 +37,4 @@ services:
           cpus: '0.25'
           memory: 64M
     # Prevent privilege escalation
-    privileged: false
-
-  openclaw:
-    # Run as non-root user
-    user: "1000:1000"
-    # Security hardening options
-    security_opt:
-      - no-new-privileges:true
-    # Drop ALL capabilities - agent needs no special privileges
-    cap_drop:
-      - ALL
-    # Read-only root filesystem where possible
-    read_only: true
-    tmpfs:
-      - /tmp:size=100M,mode=1777
-    # Resource limits for agent
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-    # Prevent privilege escalation and container escape
     privileged: false

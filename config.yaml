@@ -1,0 +1,57 @@
+# Parachute sidecar config (BYOC)
+# Agent ID: dep_8e60cee4
+
+listen: ":8080"
+
+auth:
+  allow_insecure: true
+
+upstream: "http://localhost:3000"
+
+proxy_listen: ":8888"
+
+storage:
+  type: "memory"
+
+broker:
+  enabled: true
+  listen: ":8081"
+  mode: "enforce"
+  fail_behavior: "closed"
+  pro_url: "https://parachute-pro.fly.dev"
+  api_key_env: "PARACHUTE_API_KEY"
+  integrations:
+    - name: "github"
+      provider: "github"
+      hosts:
+        - "api.github.com"
+      enabled: true
+      credential_source: "pro"
+    - name: "slack"
+      provider: "slack"
+      hosts:
+        - "api.slack.com"
+      enabled: true
+      credential_source: "pro"
+    - name: "anthropic"
+      provider: "anthropic"
+      hosts:
+        - "api.anthropic.com"
+      enabled: true
+      credential_source: "pro"
+
+egress:
+  mode: "enforce"
+  managed_hosts:
+    - "api.github.com"
+    - "api.slack.com"
+    - "api.linear.app"
+    - "api.anthropic.com"
+    - "api.openai.com"
+
+telemetry:
+  enabled: true
+  upload_url: "https://parachute-pro.fly.dev/v1/ingest/sdr-batch"
+  signing:
+    enabled: false
+

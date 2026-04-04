@@ -1,0 +1,45 @@
+# OpenClaw Agent Runtime
+#
+# NOTE: Anthropic has banned third-party harnesses from using Claude API keys.
+#       OpenClaw must use a non-Anthropic provider (OpenAI, Google, NVIDIA NIM, etc.).
+#       See: https://www.theverge.com/ai-artificial-intelligence/907074/anthropic-openclaw-claude-subscription-ban
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f agents/openclaw/compose.yaml up -d
+#
+# Required env vars:
+#   OPENAI_API_KEY (or another supported provider key)
+#   PARACHUTE_PASSWORD - Dashboard password
+#
+# NOTE: Cannot run simultaneously with nemoclaw (port 18789 conflict).
+
+services:
+  openclaw:
+    image: alpine/openclaw:latest
+    container_name: openclaw
+    networks:
+      - agent-net
+    ports:
+      - "18789:18789"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ./workspace:/workspace
+      - ./agents/openclaw/openclaw.example.json:/home/node/.openclaw/openclaw.json:ro
+    working_dir: /workspace
+    depends_on:
+      parachute:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

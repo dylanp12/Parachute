@@ -1,0 +1,18 @@
+{
+  "auth": {
+    "mode": "token"
+  },
+  "models": {
+    "default": {
+      "provider": "nvidia",
+      "model": "nvidia/nemotron-3-super-120b-a12b"
+    },
+    "openai": {
+      "provider": "openai",
+      "model": "gpt-4o"
+    }
+  },
+  "tools": {
+    "profile": "coding"
+  }
+}

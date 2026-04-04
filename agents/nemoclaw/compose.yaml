@@ -1,0 +1,49 @@
+# NemoClaw (NVIDIA) Agent Runtime
+#
+# NemoClaw wraps OpenClaw in a hardened sandbox (Landlock + seccomp + netns).
+# Parachute adds application-layer egress control on top.
+#
+# NOTE: NemoClaw requires Linux with Landlock support (kernel 5.13+).
+#       It will NOT work on macOS or Windows (use standard OpenClaw instead).
+#
+# NOTE: Anthropic has banned third-party harnesses from using Claude API keys.
+#       Use NVIDIA_API_KEY, OPENAI_API_KEY, or another supported provider.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f agents/nemoclaw/compose.yaml up -d
+#
+# Required env vars:
+#   NVIDIA_API_KEY (or OPENAI_API_KEY, or another supported provider key)
+#   PARACHUTE_PASSWORD - Dashboard password
+#
+# NOTE: Cannot run simultaneously with openclaw (port 18789 conflict).
+
+services:
+  nemoclaw:
+    image: ghcr.io/nvidia/openshell-community/sandboxes/openclaw:latest
+    container_name: nemoclaw
+    networks:
+      - agent-net
+    ports:
+      - "18789:18789"
+    environment:
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - HTTP_PROXY=http://parachute:8888
+      - HTTPS_PROXY=http://parachute:8888
+      - http_proxy=http://parachute:8888
+      - https_proxy=http://parachute:8888
+      - NO_PROXY=localhost,127.0.0.1,parachute
+      - no_proxy=localhost,127.0.0.1,parachute
+    volumes:
+      - ./workspace:/workspace
+      - ./agents/nemoclaw/openclaw.example.json:/sandbox/.openclaw/openclaw.json:ro
+    working_dir: /workspace
+    depends_on:
+      parachute:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
